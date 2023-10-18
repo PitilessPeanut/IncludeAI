@@ -1,3 +1,8 @@
+build_android
+build_ios
+build_linux
+build_win
+
 # Prerequisites
 *.d
 
@@ -15,10 +20,6 @@
 *.so
 *.dylib
 *.dll
-
-# Fortran module files
-*.mod
-*.smod
 
 # Compiled Static libraries
 *.lai
