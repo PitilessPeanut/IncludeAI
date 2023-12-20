@@ -6,10 +6,10 @@ workspace "Osgiliath"
         architecture "x86_64"
         project "Osgiliath"
                 language "c++"
-                --kind "ConsoleApp"
-                kind "WindowedApp"
+                kind "StaticLib" -- "ConsoleApp" "WindowedApp"
                 cppdialect "C++20"
                 rtti "Off"
+                exceptionhandling "Off"
                 warnings "extra"
                 files { "../src/*.cpp",
                         "../src/*.hpp",
@@ -23,17 +23,11 @@ workspace "Osgiliath"
 
                 filter { "system:windows", "action:vs*" }
                         --systemversion(os.winSdkVersion() .. ".0") 
-                        exceptionhandling "Off"
                         buildoptions { "/fp:fast" }
                         defines { "_CRT_SECURE_NO_WARNINGS", 
                                   "_CRT_NONSTDC_NO_WARNINGS",
-                                  protect_strings,
-                                  remove_strings
                                 }
-                        files { "../src_win/*.cpp",
-                                "../src_win/*.hpp"
-                              }
-                        location "../build_win"
+                        location "../build_static_win"
                         
                 filter {} -- "deactivate"
 
@@ -50,7 +44,6 @@ workspace "Osgiliath"
 
                 filter { "system:ios" }
                         toolset "clang"
-                        exceptionhandling "Off"
                         buildoptions { "-ffast-math"
                                      , "-pedantic"
                                      , nix_buildoption_fatal
@@ -59,11 +52,10 @@ workspace "Osgiliath"
                         defines { protect_strings,
                                   remove_strings
                                 }
-                        files { "../src_ios/**" }
-                        removefiles { "../src_ios/.DS_Store",
-                                      "../src_ios/Assets.xcassets/.DS_Store"
+                        removefiles { "../src/.DS_Store",
+                                      "../src/Assets.xcassets/.DS_Store"
                                     }
-                        location "../build_ios"
+                        location "../build_static_ios"
                         
                 filter {} -- "deactivate"
 
@@ -84,16 +76,8 @@ workspace "Osgiliath"
                         defines { protect_strings,
                                   remove_strings
                                 }
-                        files { "../src_linux/*.cpp", -- ok if missing
-                                "../src_linux/*.hpp",
-                                "../src_server/*.cpp", -- ok if missing
-                                "../src_server/*.hpp"
-                              }
-                        location "../build_linux"
-                        links { "pthread",
-                                "crypto",
-                                "ssl"
-                              }
+                        location "../build_static_linux"
+                        links {}
                         optimize "Speed" --"Size" --Debug" -- Speed" "Full"
 
 
