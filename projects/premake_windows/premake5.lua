@@ -1,1 +1,1 @@
-include "../build_script.lua"
+include "../build_ai.lua"

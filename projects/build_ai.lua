@@ -36,21 +36,22 @@ workspace "Osgiliath"
 
 
 
-                nix_buildoption_ignoreNaN = "-ffinite-math-only"
-                nix_buildoption_addAddressSanitize = "-fsanitize=address" -- dynamic bounds check "undefined reference"
-                nix_buildoption_utf8compiler = "-finput-charset=UTF-8 -fexec-charset=UTF-8 -fextended-identifiers"
-                nix_buildoption_fatal = "-Wfatal-errors" -- make gcc output bearable
-                nix_buildoption_shadow = "-Wshadow-compatible-local"                        
+                gcc_buildoption_ignoreNaN = "-ffinite-math-only"
+                gcc_buildoption_addAddressSanitize = "-fsanitize=address" -- dynamic bounds check "undefined reference"
+                gcc_buildoption_utf8compiler = "-finput-charset=UTF-8 -fexec-charset=UTF-8 -fextended-identifiers"
+                gcc_buildoption_fatal = "-Wfatal-errors" -- make gcc output bearable
+                gcc_buildoption_shadow = "-Wshadow-compatible-local"
+                gcc_buildoption_impl_fallthrough = "-Wimplicit-fallthrough" -- warn missing [[fallthrough]]
+                gcc_buildoption_undef = "-Wundef" -- Macros must be defined
 
                 filter { "system:ios" }
                         toolset "clang"
                         buildoptions { "-ffast-math"
                                      , "-pedantic"
-                                     , nix_buildoption_fatal
-                                     , nix_buildoption_shadow
+                                     , gcc_buildoption_fatal
+                                     , gcc_buildoption_shadow
                                      }
-                        defines { protect_strings,
-                                  remove_strings
+                        defines {
                                 }
                         removefiles { "../src/.DS_Store",
                                       "../src/Assets.xcassets/.DS_Store"
@@ -69,17 +70,17 @@ workspace "Osgiliath"
                         buildoptions { "-march=native"
                                      , "-pedantic"
                                      , "-ffast-math"
-                                     , nix_buildoption_utf8compiler
-                                     , nix_buildoption_fatal
-                                     , nix_buildoption_shadow
+                                     , gcc_buildoption_utf8compiler
+                                     , gcc_buildoption_fatal
+                                     , gcc_buildoption_shadow
+                                     , gcc_buildoption_impl_fallthrough
+                                     , gcc_buildoption_undef
                                      }
-                        defines { protect_strings,
-                                  remove_strings
+                        defines {
                                 }
                         location "../build_static_linux"
                         links {}
-                        optimize "Speed" --"Size" --Debug" -- Speed" "Full"
-
+                        optimize "Speed" --"Size" --Debug" "Full"
 
                 filter {} -- "deactivate"
 
@@ -92,12 +93,10 @@ workspace "Osgiliath"
                         defines "_DEBUG"
                         optimize "Speed"
 
-
                 filter "configurations:Release"
                         symbols "Off"
                         defines "NDEBUG"
                         optimize "Speed"
-
 
                 filter {}
 
