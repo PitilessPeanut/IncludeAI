@@ -4,17 +4,20 @@
 workspace "Osgiliath"
         configurations { "Debug", "Release" }
         architecture "x86_64"
-        project "Osgiliath"
+        project "TicTacToe"
                 language "c++"
-                kind "StaticLib" -- "ConsoleApp" "WindowedApp"
+                kind "ConsoleApp" -- "StaticLib" "WindowedApp"
                 cppdialect "C++20"
                 rtti "Off"
                 exceptionhandling "Off"
                 warnings "extra"
                 files { "../src/*.cpp",
                         "../src/*.hpp",
+                        "../test/*.cpp",
+                        "../test/*.hpp"
                       }
                 targetdir "../"
+                includedirs { "../test" }
 
 
 
@@ -27,7 +30,7 @@ workspace "Osgiliath"
                         defines { "_CRT_SECURE_NO_WARNINGS", 
                                   "_CRT_NONSTDC_NO_WARNINGS",
                                 }
-                        location "../build_static_win"
+                        location "../test"
                         
                 filter {} -- "deactivate"
 
@@ -56,7 +59,7 @@ workspace "Osgiliath"
                         removefiles { "../src/.DS_Store",
                                       "../src/Assets.xcassets/.DS_Store"
                                     }
-                        location "../build_static_ios"
+                        location "../test"
                         
                 filter {} -- "deactivate"
 
@@ -78,9 +81,9 @@ workspace "Osgiliath"
                                      }
                         defines {
                                 }
-                        location "../build_static_linux"
+                        location "../test"
                         links {}
-                        optimize "Speed" --"Size" --Debug" "Full"
+                        optimize "Debug" --"Size" --Debug" "Full"
 
                 filter {} -- "deactivate"
 
