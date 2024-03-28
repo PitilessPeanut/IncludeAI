@@ -52,6 +52,19 @@
 
     struct Node
     {
+        static constexpr int never_expanded = -1;
+        int      activeBranches  = never_expanded;
+        int      createdBranches = 0;
+        Node    *parent;
+        Node    *branches = nullptr;
+        SWORD    visits = 0;
+        float    score;
+        float    UCBscore;    // Placeholder used during UCB calc.
+        Move     moveHere;
+        
+        Node();
+        
+        Node(Node *newParent, Move move);
     };
 
 
@@ -61,9 +74,13 @@
     template <int NumNodes, class IntType>
     struct Ai_ctx
     {
-        //static constexpr int numNodes =
-
     //    NodeAllocator<, IntType> nodeAllocator;
+        
+        Node nodePool[NumNodes];
+        
+        Ai_ctx() {}
+        Ai_ctx(const Ai_ctx&) = delete;
+        Ai_ctx& operator=(const Ai_ctx&) = delete;
     };
 
 
@@ -79,13 +96,12 @@
 /****************************************/
 /*                       Find best move */
 /****************************************/
-    template <int NumNodes, int MaxIterations, typename IntType>
-    Move mcts(Board *boardClone, const Board *boardOriginal, Ai_ctx<NumNodes, IntType>& ai_ctx, const Simulator *simulator)
+    struct MCTS_result
     {
+        Move move;
+    };
 
-
-    return Move{0,nullptr};
-    }
+    MCTS_result mcts_500_2000_32(Board *boardEmpty, const Board *boardOriginal, Ai_ctx<500, UDWORD>& ai_ctx, const Simulator *simulator);
 
 
 #else
