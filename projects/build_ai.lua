@@ -17,7 +17,7 @@ workspace "Osgiliath"
                         "../test/*.hpp"
                       }
                 targetdir "../"
-                includedirs { "../test" }
+                includedirs { "../example" }
 
 
 
@@ -74,7 +74,6 @@ workspace "Osgiliath"
                                      , "-pedantic"
                                      , "-ffast-math"
                                      , gcc_buildoption_utf8compiler
-                                     , gcc_buildoption_fatal
                                      , gcc_buildoption_shadow
                                      , gcc_buildoption_impl_fallthrough
                                      , gcc_buildoption_undef
@@ -94,7 +93,7 @@ workspace "Osgiliath"
                 filter "configurations:Debug"
                         symbols "On"
                         defines "_DEBUG"
-                        optimize "Speed"
+                        optimize "Debug"
 
                 filter "configurations:Release"
                         symbols "Off"

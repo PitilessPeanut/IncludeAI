@@ -46,7 +46,7 @@ static_assert([]{ constexpr UWORD x = ~0; return x>>15; }());
 static_assert(sizeof(UDWORD) == (sizeof(UWORD)<<1));
 
 // 8 bit:
-constexpr unsigned CHARBITS = []{ return 32u / sizeof(UDWORD); }();
+constexpr decltype(sizeof(1)) CHARBITS = []{ return 32u / sizeof(UDWORD); }();
 typedef unsigned char UBYTE;
 typedef signed char SBYTE;
 static_assert((sizeof(UBYTE)*CHARBITS) == 8);

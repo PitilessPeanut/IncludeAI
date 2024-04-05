@@ -2,6 +2,7 @@
 #define AI_HPP
 
 #include "asmtypes.hpp"
+#include "node_allocator.hpp"
 
 
 /****************************************/
@@ -58,13 +59,25 @@
         Node    *parent;
         Node    *branches = nullptr;
         SWORD    visits = 0;
-        float    score;
+        float    score = 0.f;
         float    UCBscore;    // Placeholder used during UCB calc.
         Move     moveHere;
         
-        Node();
+        constexpr Node()
+          : parent(nullptr),
+            moveHere({0, nullptr})
+        {}
         
-        Node(Node *newParent, Move move);
+        constexpr Node(Node *newParent, Move move)
+          : activeBranches(never_expanded),
+            parent(newParent),
+            moveHere(move) // Ownership is implicit (the 'owner' is the player how makes this move!)
+        {}
+    
+        Node(const Node&)            = delete;
+        Node& operator=(const Node&) = delete;
+        Node(Node&&)                 = delete;
+        Node& operator=(Node&&);
     };
 
 
@@ -74,8 +87,8 @@
     template <int NumNodes, class IntType>
     struct Ai_ctx
     {
-    //    NodeAllocator<, IntType> nodeAllocator;
-        
+        static constexpr int numNodes = NumNodes;
+        NodeAllocator<NumNodes, IntType> nodeAllocator;    
         Node nodePool[NumNodes];
         
         Ai_ctx() {}
@@ -101,9 +114,15 @@
         Move move;
     };
 
-    MCTS_result mcts_500_2000_32(Board *boardEmpty, const Board *boardOriginal, Ai_ctx<500, UDWORD>& ai_ctx, const Simulator *simulator);
+    MCTS_result mcts_500_2000_1p20__32(Board *boardEmpty, const Board *boardOriginal, Ai_ctx<500, UDWORD>& ai_ctx, const Simulator *simulator);
 
 
 #else
   #error "double include"
 #endif // AI_HPP
+
+
+
+
+
+
