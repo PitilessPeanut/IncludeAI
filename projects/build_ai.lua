@@ -13,11 +13,11 @@ workspace "Osgiliath"
                 warnings "extra"
                 files { "../src/*.cpp",
                         "../src/*.hpp",
-                        "../test/*.cpp",
-                        "../test/*.hpp"
+                        "../example/*.cpp",
+                        "../example/*.hpp"
                       }
+                removefiles { "../src/bridge.cpp", "../src/bridge.hpp" }
                 targetdir "../"
-                includedirs { "../example" }
 
 
 
@@ -30,7 +30,7 @@ workspace "Osgiliath"
                         defines { "_CRT_SECURE_NO_WARNINGS", 
                                   "_CRT_NONSTDC_NO_WARNINGS",
                                 }
-                        location "../test"
+                        location "../example"
                         
                 filter {} -- "deactivate"
 
@@ -59,7 +59,7 @@ workspace "Osgiliath"
                         removefiles { "../src/.DS_Store",
                                       "../src/Assets.xcassets/.DS_Store"
                                     }
-                        location "../test"
+                        location "../example"
                         
                 filter {} -- "deactivate"
 
@@ -80,7 +80,7 @@ workspace "Osgiliath"
                                      }
                         defines {
                                 }
-                        location "../test"
+                        location "../example"
                         links {}
                         optimize "Debug" --"Size" --Debug" "Full"
 

@@ -21,7 +21,7 @@
 
 
 /****************************************/
-/*                       Floyd Warshall */
+/*                       Floyd-Warshall */
 /* github.com/Wenox/fast-fw/            */
 /****************************************/
     template <typename G>

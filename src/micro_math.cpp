@@ -1,5 +1,6 @@
 #include "micro_math.hpp"
 
+
 /****************************************/
 /*                           PCG Random */
 /****************************************/
@@ -49,7 +50,7 @@
         // Advance internal state:
         state = oldstate * PCG_DEFAULT_MULTIPLIER + (inc | 1);
         // Calculate output function (XSH RR), uses old state for max ILP:
-        const UWORD xorshifted = UDWORD(((oldstate >> 10u) ^ oldstate) >> 12u);
+        const UWORD xorshifted = UWORD(((oldstate >> 10u) ^ oldstate) >> 12u);
         const UWORD rot = oldstate >> 28u;
         return (xorshifted >> rot) | (xorshifted << ((~rot) & 15));
     }

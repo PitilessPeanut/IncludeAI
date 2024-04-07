@@ -48,8 +48,8 @@
 /****************************************/
 /*                                 Node */
 /****************************************/
-    template <int NumNodes, class IntType>
-    struct Ai_ctx;
+  //  template <int NumNodes, class IntType>
+  //  struct Ai_ctx;
 
     struct Node
     {
@@ -114,7 +114,9 @@
         Move move;
     };
 
-    MCTS_result mcts_500_2000_1p20__32(Board *boardEmpty, const Board *boardOriginal, Ai_ctx<500, UDWORD>& ai_ctx, const Simulator *simulator);
+    // mcts_NODES_ROTATIONS_EXPLRCONSTANT_INTSIZE()
+    MCTS_result mcts__500_2000_1p20__u32(Board *boardEmpty, const Board *boardOriginal, Ai_ctx<500, UDWORD>& ai_ctx, const Simulator *simulator);
+    MCTS_result mcts_1500_4000_1p20__u64(Board *boardEmpty, const Board *boardOriginal, Ai_ctx<500, UDWORD>& ai_ctx, const Simulator *simulator);
 
 
 #else
