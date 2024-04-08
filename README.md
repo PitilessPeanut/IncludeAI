@@ -1,8 +1,8 @@
-#### Decision Making AI
+# &#35;include<AI>
 
 This is a new, custom, hand-written implementation of a **Zero-Knowledge Reinforcement Learning** algorithm that, unlike AlphaZero, does NOT suffer from the [shallow trap](https://nullprogram.com/blog/2017/04/27) problem and should be able to play *solved* games perfectly.
 
-While focusing on General Game Playing, aka. *Effective Decision Making under Uncertain or Incomplete Information* (EDMUII), this project aims to implement [Artificial General Intelligence](https://en.wikipedia.org/wiki/Artificial_general_intelligence) in a easy-to-use and quick-to-depoly way that is also usable. Since this is the most difficult[^1] problem in the universe, far surpassing quantum physics, elliptic curve arithmetic and axionic singularity modulation, it remains an ongoing research project! Please be considerate 🔬
+Marvel over this [stb](https://github.com/nothings/stb/)-style *#include*-only single-header library focusing on General Game Playing, aka. *Effective Decision Making under Uncertain or Incomplete Information* (EDMUII). It aims to implement [Artificial General Intelligence](https://en.wikipedia.org/wiki/Artificial_general_intelligence) as a single-header drop-in library with an emphasis on quick deployment and ease-of-use. *General Game Playing* is the most difficult[^1] problem in the universe, far surpassing quantum physics, elliptic curve arithmetic and axionic singularity modulation. As such, it remains an ongoing research project! Thread carefully 🔬
  
 
 ### Building

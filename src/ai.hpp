@@ -46,26 +46,22 @@
 
 
 /****************************************/
-/*                                 Node */
+/*      Node (should fit into 64 bytes) */
 /****************************************/
-  //  template <int NumNodes, class IntType>
-  //  struct Ai_ctx;
-
     struct Node
     {
         static constexpr int never_expanded = -1;
-        int      activeBranches  = never_expanded;
-        int      createdBranches = 0;
-        Node    *parent;
-        Node    *branches = nullptr;
+        int      activeBranches  = never_expanded; // Must be signed!
+        int      createdBranches = 0;              // Must be signed!
         SWORD    visits = 0;
+        Node    *parent = nullptr;
+        Node    *branches = nullptr;
         float    score = 0.f;
         float    UCBscore;    // Placeholder used during UCB calc.
         Move     moveHere;
         
         constexpr Node()
-          : parent(nullptr),
-            moveHere({0, nullptr})
+          : moveHere({0, nullptr})
         {}
         
         constexpr Node(Node *newParent, Move move)
@@ -111,12 +107,15 @@
 /****************************************/
     struct MCTS_result
     {
+        enum {chunk_overflow,end};
+        int errors[end] = {0};
         Move move;
     };
 
-    // mcts_NODES_ROTATIONS_EXPLRCONSTANT_INTSIZE()
-    MCTS_result mcts__500_2000_1p20__u32(Board *boardEmpty, const Board *boardOriginal, Ai_ctx<500, UDWORD>& ai_ctx, const Simulator *simulator);
-    MCTS_result mcts_1500_4000_1p20__u64(Board *boardEmpty, const Board *boardOriginal, Ai_ctx<500, UDWORD>& ai_ctx, const Simulator *simulator);
+    // usage: mcts_NODES_ROTATIONS_EXPLRCONSTANT__INTSIZE
+    MCTS_result mcts___5000_2000_1p20__u32(Board *boardEmpty, const Board *boardOriginal, Ai_ctx<  5000, UDWORD>& ai_ctx, const Simulator *simulator);
+    MCTS_result mcts__15000_4000_1p20__u64(Board *boardEmpty, const Board *boardOriginal, Ai_ctx< 15000, UQWORD>& ai_ctx, const Simulator *simulator);
+    MCTS_result mcts_100000_4000_1p20__u64(Board *boardEmpty, const Board *boardOriginal, Ai_ctx<100000, UQWORD>& ai_ctx, const Simulator *simulator);
 
 
 #else

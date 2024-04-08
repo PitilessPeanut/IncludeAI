@@ -28,7 +28,11 @@ typedef decltype([]
         SDWORD;
 static_assert(sizeof(UDWORD) == sizeof(SDWORD));
 static_assert([]{ constexpr UDWORD x = ~0; return x >> 31; }());
-typedef UDWORD ULONG;
+#ifndef BASETYPES
+  typedef UDWORD ULONG;
+#else
+  static_assert(sizeof(UDWORD) == sizeof(ULONG));
+#endif
 typedef SDWORD SLONG;
 
 // 64 bit:
@@ -44,6 +48,12 @@ typedef decltype([]{ constexpr signed short i16 = 0; return i16; }()) SWORD;
 static_assert(sizeof(UWORD) == sizeof(SWORD));
 static_assert([]{ constexpr UWORD x = ~0; return x>>15; }());
 static_assert(sizeof(UDWORD) == (sizeof(UWORD)<<1));
+#ifndef BASETYPES
+  typedef UWORD USHORT;
+#else
+  static_assert(sizeof(UWORD) == sizeof(USHORT));
+#endif
+typedef SWORD SSHORT;
 
 // 8 bit:
 constexpr decltype(sizeof(1)) CHARBITS = []{ return 32u / sizeof(UDWORD); }();

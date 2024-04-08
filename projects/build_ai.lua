@@ -43,7 +43,7 @@ workspace "Osgiliath"
                 gcc_buildoption_addAddressSanitize = "-fsanitize=address" -- dynamic bounds check "undefined reference"
                 gcc_buildoption_utf8compiler = "-finput-charset=UTF-8 -fexec-charset=UTF-8 -fextended-identifiers"
                 gcc_buildoption_fatal = "-Wfatal-errors" -- make gcc output bearable
-                gcc_buildoption_shadow = "-Wshadow-compatible-local"
+                gcc_buildoption_shadow = "-Wshadow-compatible-local" -- not working on clang
                 gcc_buildoption_impl_fallthrough = "-Wimplicit-fallthrough" -- warn missing [[fallthrough]]
                 gcc_buildoption_undef = "-Wundef" -- Macros must be defined
 
@@ -51,6 +51,7 @@ workspace "Osgiliath"
                         toolset "clang"
                         buildoptions { "-ffast-math"
                                      , "-pedantic"
+                                     , "-Wno-unknown-warning-option"
                                      , gcc_buildoption_fatal
                                      , gcc_buildoption_shadow
                                      }
@@ -73,6 +74,7 @@ workspace "Osgiliath"
                         buildoptions { "-march=native"
                                      , "-pedantic"
                                      , "-ffast-math"
+                                     , "-Wno-unknown-warning-option"
                                      , gcc_buildoption_utf8compiler
                                      , gcc_buildoption_shadow
                                      , gcc_buildoption_impl_fallthrough

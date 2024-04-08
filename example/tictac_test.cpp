@@ -11,14 +11,6 @@ int gaem_scan([[maybe_unused]] void *pEverything)
     return i;
 }
 
-void gaem_draw([[maybe_unused]] void *pEverything, [[maybe_unused]] const unsigned *updatesVct, [[maybe_unused]] int size)
-{
-}
-
-void gaem_debugPrint([[maybe_unused]] void *pEverything, [[maybe_unused]] const char *debugStr)
-{
-}
-
 
 
 
@@ -104,7 +96,7 @@ public:
     }
 };
 
-/*
+
 struct TicTacPlayerBase
 {
     virtual Move selectMove(const TicTacBoard&, const int) = 0;
@@ -112,18 +104,18 @@ struct TicTacPlayerBase
 };
 
 struct TicTacPlayer : TicTacPlayerBase
-{*/
+{
     Move selectMove([[maybe_unused]] const TicTacBoard& original, [[maybe_unused]] const int input) //override
     {
         return Move{input, nullptr};
     }
-/*};
+};
 
 struct TicTacAiRand : TicTacPlayerBase 
 {
-    Ai_ctx<500, UDWORD> ai_ctx;
-   */ 
-    Move selectMove(Ai_ctx<500, UDWORD>& ai_ctx, [[maybe_unused]] const TicTacBoard& original, [[maybe_unused]] const int input) //override
+    Ai_ctx<15000, UQWORD> ai_ctx;
+   
+    Move selectMove([[maybe_unused]] const TicTacBoard& original, [[maybe_unused]] const int input) //override
     {
         TicTacBoard empty;
         struct RandRoll : Simulator
@@ -135,7 +127,7 @@ struct TicTacAiRand : TicTacPlayerBase
             float simulate(const Board *original) const override
     	    {
     	        int simWins = 0;
-    	        constexpr int MaxRandSims = 7;
+    	        constexpr int MaxRandSims = 27;
     	        // Run simulations:
     	        for (int i=0; i<MaxRandSims; ++i)
     	        {
@@ -178,10 +170,10 @@ struct TicTacAiRand : TicTacPlayerBase
                 return winRatio + 1.f; // +1 to convert range from [-1,1] to [0,2] with 1.0 being 50/50.
             }
         } randRoll(original.getCurrentPlayer());
-        const MCTS_result res = mcts_500_2000_1p20__32(&empty, &original, ai_ctx, &randRoll);
+        const MCTS_result res = mcts__15000_4000_1p20__u64(&empty, &original, ai_ctx, &randRoll);
         return res.move;
     }
-//};
+};
 
 
 
@@ -189,20 +181,16 @@ struct TicTacAiRand : TicTacPlayerBase
 class World
 {
 private:
-   // TicTacPlayer h1, h2;
-   // TicTacAiRand ai1;
-    Ai_ctx<500, UDWORD> ai_ctx;
+    TicTacPlayer h1, h2;
+    TicTacAiRand ai1;
     typedef int (*fnReadInput)();
     fnReadInput readInput[3] = { nullptr,
                                  []() { return gaem_scan(nullptr); },
                                  []() { return 0; /* this will be ignored by aid */ },
                                };
-   // TicTacPlayerBase* players[3] = { nullptr, &h1, &ai1 };
+    //TicTacPlayerBase* players[3] = { nullptr, &h1, &ai1 };
 public:
-    World()
-    {
-        //device.scan = gaem_scan;
-    }
+    World() { pcgRand<UQWORD>(0x696969ull); }
 
     void step()
     {
@@ -217,13 +205,18 @@ public:
                 const int currentPlayer = ticTacBoard.getCurrentPlayer();
                 std::printf("player %d\n", currentPlayer);
                 //TicTacPlayerBase *pPlayer = players[currentPlayer];
-                const int sel = readInput[currentPlayer](device); // Ignored by ai
+                const int sel = readInput[currentPlayer](); // Ignored by ai
+                if (sel == 9)
+                {
+                    std::printf("exiting...\n");
+                    return;
+                }
                 //const Move mv = players[currentPlayer]->selectMove(ticTacBoard, sel);
                 Move mv;
                 if (currentPlayer==1)
-                    mv = /*h1.*/selectMove(ticTacBoard, sel);
+                    mv = h1.selectMove(ticTacBoard, sel);
                 else
-                    mv = /*ai1.*/selectMove(ai_ctx, ticTacBoard, sel);
+                    mv = ai1.selectMove(ticTacBoard, sel);
                 
                 std::printf("  playing: %d \n", mv.moveIdx);
                 running = ticTacBoard.doMove(mv);

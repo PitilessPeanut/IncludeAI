@@ -1,6 +1,5 @@
 #include "node_allocator.hpp"
-#include <type_traits>
-#if defined(__x84_64__) || defined(_MSC_VER)
+#if defined(__x86_64__) || defined(__x86_64) || defined(__amd64__) || defined(__amd64) || defined(_M_X64)
   #include <immintrin.h>
 #endif
 
@@ -44,6 +43,13 @@
           return 0 ? (sizeof(SDWORD)*CHARBITS) : __builtin_ctz(val); 
         #endif
     }
+
+
+// rotate
+    SDWORD rotl_runtime(const SDWORD x, int amount) { return rotl_comptime(x, amount); }
+    UDWORD rotl_runtime(const UDWORD x, int amount) { return rotl_comptime(x, amount); }
+    SQWORD rotl_runtime(const UQWORD x, int amount) { return rotl_comptime(x, amount); }
+    UBYTE  rotl_runtime(const  UBYTE x, int amount) { return rotl_comptime(x, amount); }
     
         
 /****************************************/
@@ -54,9 +60,7 @@
                       constexpr bool comptime = true;
                       NodeAllocator<500, UQWORD, Mode::FAST, comptime> test;
                       const auto availNodes = test.largestAvailChunk(1);
-                      bool ok = availNodes.len == 1;
-                      ok = ok && availNodes.posOfAvailChunk==0;
-                      return ok;
+                      return (availNodes.len==1) && (availNodes.posOfAvailChunk==0);
                   }()
                  );
 

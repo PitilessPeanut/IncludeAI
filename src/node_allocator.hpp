@@ -34,11 +34,16 @@
 
 // rotate
     template <typename Int>
-    constexpr Int rotl(Int x, int amount)
+    constexpr Int rotl_comptime(Int x, int amount)
     {
         // _rotl64 // todo: msvc
         return ((x << amount) | (x >> ((sizeof(Int)*CHARBITS) - amount)));
     }
+
+    SDWORD rotl_runtime(const SDWORD x, int amount);
+    UDWORD rotl_runtime(const UDWORD x, int amount);
+    SQWORD rotl_runtime(const UQWORD x, int amount);
+    UBYTE  rotl_runtime(const  UBYTE x, int amount);
 
 
 // min/max
@@ -80,6 +85,14 @@
                            else
                                return ctz_runtime(val);
                        };
+
+            auto rotl = [](auto x, int amount)
+                        {
+                            if constexpr (comptime)
+                                return rotl_comptime(x, amount);
+                            else
+                                return rotl_runtime(x, amount);
+                        };
            
             int discoveredSize = ptMin(desiredSize, Intbits*NumberOfBuckets);
             while (discoveredSize>0)
