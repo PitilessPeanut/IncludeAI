@@ -9,7 +9,7 @@
 /****************************************/
 // ctz
     template <typename Int>
-    constexpr int ctz_comptime(Int val)
+    consteval int ctz_comptime(Int val)
     {
         Int c=0;  // output: c will count val's trailing zero bits,
                   // so if val is 1101000, then c will be 3
@@ -36,13 +36,12 @@
     template <typename Int>
     constexpr Int rotl_comptime(Int x, int amount)
     {
-        // _rotl64 // todo: msvc
         return ((x << amount) | (x >> ((sizeof(Int)*CHARBITS) - amount)));
     }
 
     SDWORD rotl_runtime(const SDWORD x, int amount);
     UDWORD rotl_runtime(const UDWORD x, int amount);
-    SQWORD rotl_runtime(const UQWORD x, int amount);
+    UQWORD rotl_runtime(const UQWORD x, int amount);
     UBYTE  rotl_runtime(const  UBYTE x, int amount);
 
 

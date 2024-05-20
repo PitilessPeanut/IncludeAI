@@ -27,7 +27,7 @@ typedef decltype([]
                 )
         SDWORD;
 static_assert(sizeof(UDWORD) == sizeof(SDWORD));
-static_assert([]{ constexpr UDWORD x = ~0; return x >> 31; }());
+static_assert([]{ constexpr UDWORD x=~0; return x>>31; }());
 #ifndef BASETYPES
   typedef UDWORD ULONG;
 #else
@@ -36,17 +36,17 @@ static_assert([]{ constexpr UDWORD x = ~0; return x >> 31; }());
 typedef SDWORD SLONG;
 
 // 64 bit:
-typedef decltype([]{ constexpr auto u64 = 0ull; return u64; }()) UQWORD;
-typedef decltype([]{ constexpr auto i64 = 0ll ; return i64; }()) SQWORD;
+typedef decltype([]{ constexpr auto u64=0ull; return u64; }()) UQWORD;
+typedef decltype([]{ constexpr auto i64=0ll ; return i64; }()) SQWORD;
 static_assert(sizeof(UQWORD) == sizeof(SQWORD));
-static_assert([] { constexpr UQWORD x = ~0; return x>>63; }());
+static_assert([]{ constexpr UQWORD x=~0; return x>>63; }());
 static_assert(sizeof(UQWORD) == (sizeof(UDWORD)<<1));
 
 // 16 bit:
-typedef decltype([]{ constexpr unsigned short u16 = 0; return u16; }()) UWORD;
-typedef decltype([]{ constexpr signed short i16 = 0; return i16; }()) SWORD;
+typedef decltype([]{ constexpr unsigned short u16=0; return u16; }()) UWORD;
+typedef decltype([]{ constexpr signed short i16=0; return i16; }()) SWORD;
 static_assert(sizeof(UWORD) == sizeof(SWORD));
-static_assert([]{ constexpr UWORD x = ~0; return x>>15; }());
+static_assert([]{ constexpr UWORD x=~0; return x>>15; }());
 static_assert(sizeof(UDWORD) == (sizeof(UWORD)<<1));
 #ifndef BASETYPES
   typedef UWORD USHORT;
@@ -55,12 +55,20 @@ static_assert(sizeof(UDWORD) == (sizeof(UWORD)<<1));
 #endif
 typedef SWORD SSHORT;
 
-// 8 bit:
-constexpr decltype(sizeof(1)) CHARBITS = []{ return 32u / sizeof(UDWORD); }();
+// 8 bit: 
+constexpr decltype(sizeof(1)) CHARBITS = []{ return 32u / sizeof( UDWORD ); }();
 typedef unsigned char UBYTE;
 typedef signed char SBYTE;
 static_assert((sizeof(UBYTE)*CHARBITS) == 8);
 static_assert(sizeof(UBYTE) == sizeof(SBYTE));
+
+// "real" numbers:
+typedef float FLOAT;
+typedef FLOAT REAL;
+static_assert(sizeof(FLOAT) == sizeof(UDWORD));
+typedef double DOUBLE;
+typedef DOUBLE LREAL;
+static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
 
 
 

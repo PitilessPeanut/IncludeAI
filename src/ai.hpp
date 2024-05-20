@@ -11,8 +11,8 @@
 /****************************************/
     struct Move
     {
-        // A move represented as an index into a table of possible moves, or used directly:
-        SDWORD moveIdx;
+        // A generic 'move'. Can represent anything:
+        SDWORD moveIdx; // todo change name
         // Pointer to another possible move by the same player (used during node expansion):
         Move *next;
     };
@@ -33,7 +33,9 @@
 
         virtual void cloneInto(Board *dst) const = 0;
 
-        virtual Move *getAnotherMove() = 0;
+        virtual int getMovesCnt() const = 0;
+        
+        virtual Move getMove(int idx) = 0;
 
         virtual Outcome doMove(const Move) = 0;
 
@@ -53,11 +55,14 @@
         static constexpr int never_expanded = -1;
         int      activeBranches  = never_expanded; // Must be signed!
         int      createdBranches = 0;              // Must be signed!
-        SWORD    visits = 0;
+        SWORD    mnx = -999; // minimax score
+       // SWORD    visits = 1;  
+       float visits = 1.f; //1.f;
+        //float weight = 1.f;
         Node    *parent = nullptr;
         Node    *branches = nullptr;
-        float    score = 0.f;
-        float    UCBscore;    // Placeholder used during UCB calc.
+        float    score = 0.f; //0.01f;    // Start with some positive value to prevent divide by zero error
+        float    UCBscore;         // Placeholder used during UCB calc.
         Move     moveHere;
         
         constexpr Node()
@@ -103,6 +108,12 @@
 
 
 /****************************************/
+/*                          Hyperparams */
+/****************************************/
+    enum : UQWORD { count_visits_only=1, cutoff_scoring=2, minimax=4 };
+
+    
+/****************************************/
 /*                       Find best move */
 /****************************************/
     struct MCTS_result
@@ -112,10 +123,28 @@
         Move move;
     };
 
-    // usage: mcts_NODES_ROTATIONS_EXPLRCONSTANT__INTSIZE
-    MCTS_result mcts___5000_2000_1p20__u32(Board *boardEmpty, const Board *boardOriginal, Ai_ctx<  5000, UDWORD>& ai_ctx, const Simulator *simulator);
-    MCTS_result mcts__15000_4000_1p20__u64(Board *boardEmpty, const Board *boardOriginal, Ai_ctx< 15000, UQWORD>& ai_ctx, const Simulator *simulator);
-    MCTS_result mcts_100000_4000_1p20__u64(Board *boardEmpty, const Board *boardOriginal, Ai_ctx<100000, UQWORD>& ai_ctx, const Simulator *simulator);
+
+/****************************************/
+/*                      mcts variations */
+/****************************************/
+    #define MAKE_MCTS_CUTOFF(nodes,rots,expl_base,expl_fract,intstr,itype, cntvis)\
+      MCTS_result mcts_##nodes##_##rots##_##expl_base##p##expl_fract##cntvis##__##intstr(\
+          Board *boardEmpty, const Board *boardOriginal, Ai_ctx<nodes, itype>& ai_ctx, const Simulator *simulator); \
+      MCTS_result mcts_##nodes##_##rots##_##expl_base##p##expl_fract##cntvis##c__##intstr(\
+          Board *boardEmpty, const Board *boardOriginal, Ai_ctx<nodes, itype>& ai_ctx, const Simulator *simulator);
+
+    #define MAKE_MCTS_COUNT_VISITS(nodes,rots,expl_base,expl_fract,intstr,itype) \
+      MAKE_MCTS_CUTOFF(nodes,rots,expl_base,expl_fract,intstr,itype, __) \
+      MAKE_MCTS_CUTOFF(nodes,rots,expl_base,expl_fract,intstr,itype, __v)
+  
+    #define MAKE_MCTS(nodes,rots,expl_base,expl_fract)\
+      MAKE_MCTS_COUNT_VISITS(nodes,rots,expl_base,expl_fract, u32,UDWORD) \
+      MAKE_MCTS_COUNT_VISITS(nodes,rots,expl_base,expl_fract, u64,UQWORD) 
+      
+
+    MAKE_MCTS(500, 1500, 0,80)
+    MAKE_MCTS(500, 1500, 1,20)
+    MAKE_MCTS(500, 1500, 2,20)
 
 
 #else

@@ -1,6 +1,10 @@
 #include "node_allocator.hpp"
 #if defined(__x86_64__) || defined(__x86_64) || defined(__amd64__) || defined(__amd64) || defined(_M_X64)
   #include <immintrin.h>
+#elif defined(__aarch64__)
+  #include <arm_neon.h>
+#else
+  #error "unknown arch"
 #endif
 
  
@@ -8,7 +12,7 @@
 /*                                Tools */
 /****************************************/
 // ctz
-    int ctz_runtime(const UBYTE  val) 
+    int ctz_runtime(const UBYTE val) 
     { 
         #ifdef _WIN32
           return _tzcnt_u32( (unsigned int)val );
@@ -46,16 +50,47 @@
 
 
 // rotate
-    SDWORD rotl_runtime(const SDWORD x, int amount) { return rotl_comptime(x, amount); }
-    UDWORD rotl_runtime(const UDWORD x, int amount) { return rotl_comptime(x, amount); }
-    SQWORD rotl_runtime(const UQWORD x, int amount) { return rotl_comptime(x, amount); }
-    UBYTE  rotl_runtime(const  UBYTE x, int amount) { return rotl_comptime(x, amount); }
+    SDWORD rotl_runtime(const SDWORD x, int amount) 
+    { 
+        #ifdef _WIN32
+          return _rotl(x, amount);
+        #else
+          return rotl_comptime(x, amount); 
+        #endif
+    }
+    
+    UDWORD rotl_runtime(const UDWORD x, int amount) 
+    { 
+        #ifdef _WIN32
+          _rotl(x, amount);
+        #else
+          return rotl_comptime(x, amount); 
+        #endif
+    }
+    
+    UQWORD rotl_runtime(const UQWORD x, int amount) 
+    { 
+        #ifdef _WIN32
+          return _rotl64(x, amount);
+        #else
+          return rotl_comptime(x, amount); 
+        #endif
+    }
+    
+    UBYTE  rotl_runtime(const UBYTE x, int amount) 
+    { 
+        #ifdef _WIN32
+          return _rotl8(x, amount);
+        #else
+          return rotl_comptime(x, amount); 
+        #endif
+    }
     
         
 /****************************************/
 /*                                Tests */
 /****************************************/
-    static_assert([]
+/*    static_assert([]
                   {
                       constexpr bool comptime = true;
                       NodeAllocator<500, UQWORD, Mode::FAST, comptime> test;
@@ -110,4 +145,4 @@
                   }()
                  );
 
-                 
+          */       

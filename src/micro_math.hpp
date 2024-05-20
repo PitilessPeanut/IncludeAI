@@ -21,32 +21,6 @@
 
 
 /****************************************/
-/*                       Floyd-Warshall */
-/* github.com/Wenox/fast-fw/            */
-/****************************************/
-    template <typename G>
-    void FloydWarshall_generic(G *dist, G *path, int n)
-    {
-        for (int k=0; k<n; ++k)
-        for (int i=0; i<n; ++i)
-        for (int j=0; j<n; ++j)
-        {
-            const auto in = i*n;
-            const auto distance = dist[in+k] + dist[(k*5)+j];
-            const auto index = j+in;
-            if (dist[index] > distance)
-            {
-                dist[index] = distance;
-                path[index] = k;
-            }
-        }
-
-
-
-    }
-
-
-/****************************************/
 /*                           PCG Random */
 /****************************************/
     class pcg32
@@ -84,6 +58,18 @@
     }
 
 
+/****************************************/
+/*                                fibon */
+/****************************************/
+    template <typename Int>
+    constexpr Int fib(const Int i)
+    {
+        if (i<=1)
+            return i;
+        return fib(i-1) + fib(i-2);
+    }
+
+    
 #else
   #error double include
 #endif // MICRO_MATH_HPP

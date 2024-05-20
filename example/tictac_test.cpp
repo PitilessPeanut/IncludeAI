@@ -20,7 +20,6 @@ public:
     unsigned char pos[9+1] = {0};
     int currentPlayer = 1, turn = 0;
 private:
-    int availMovesIdx = -1;
     Move availMoves[9]; 
 public:
     TicTacBoard() {}
@@ -36,29 +35,21 @@ public:
     	clone.turn = turn;
     }
 
-    Move *getAnotherMove() override
+    int getMovesCnt() override
     {
-        // Done, all moves returned:
-        if (availMovesIdx==0)
+        int availMovesCtr = 0;
+        for (int i=0; i<9; ++i) 
         {
-            availMovesIdx = -1;
-            return nullptr;
+            // find valid moves:
+            if (pos[i]==0)
+                availMoves[availMovesCtr++] = Move{i, nullptr};
         }
-        // New turn, create moves:
-        else if (availMovesIdx == -1)
-        {
-            for (int i=0; i<9; ++i) 
-                // find valid moves:
-                if (pos[i]==0)
-                {
-                    availMovesIdx += 1;
-                    availMoves[availMovesIdx] = Move{i, nullptr};
-                }
-            availMovesIdx += 1;
-        }
-        // Return another move:
-        availMovesIdx -= 1;
-        return &availMoves[ availMovesIdx ];
+        return availMovesCtr;
+    }
+
+    Move getMove(int idx) override
+    {
+        return availMoves[ idx ];
     }
 
     Board::Outcome doMove(const Move mv) override
@@ -99,23 +90,64 @@ public:
 
 struct TicTacPlayerBase
 {
+    int score = 0;
     virtual Move selectMove(const TicTacBoard&, const int) = 0;
     virtual ~TicTacPlayerBase() = default;
 };
 
 struct TicTacPlayer : TicTacPlayerBase
 {
-    Move selectMove([[maybe_unused]] const TicTacBoard& original, [[maybe_unused]] const int input) //override
+    Move selectMove([[maybe_unused]] const TicTacBoard& original, [[maybe_unused]] const int input) override
     {
         return Move{input, nullptr};
     }
 };
 
+template <int ExplC, UQWORD hyperparams>
+inline constexpr MCTS_result selectMCTS(Board *boardEmpty, const Board *boardOriginal, Ai_ctx<500, UQWORD>& ai_ctx, const Simulator *simulator)
+{
+
+    #define SEL_MCTS_CUTOFF(base,fract,cntvis) \
+      if constexpr ((cutoff_scoring&hyperparams)==cutoff_scoring)\
+          return mcts_500_1500_##base##p##fract##cntvis##c__u64(boardEmpty, boardOriginal, ai_ctx, simulator);\
+      else\
+          return mcts_500_1500_##base##p##fract##cntvis##__u64(boardEmpty, boardOriginal, ai_ctx, simulator);
+                  
+
+    #define SEL(base,fract)\
+      if constexpr (ExplC==((base*100)+fract))\
+      {\
+          if constexpr ((count_visits_only&hyperparams)==count_visits_only)\
+          {\
+              SEL_MCTS_CUTOFF(base,fract, __v) \
+          }\
+          else\
+          {\
+              SEL_MCTS_CUTOFF(base,fract, __) \
+          }\
+      }
+
+    /*#define SEL_MCTS_COUNT_VISITS(nodes,rots,base,fract, intstr,itype) \
+      SEL_MCTS_CUTOFF() \
+      SEL_MCTS_CUTOFF()
+
+    #define SEL_MCTS(nodes,rots,base,fract) \
+      SEL_MCTS_COUNT_VISITS(nodes,rots,base,fract, u32,UDWORD) \
+      SEL_MCTS_COUNT_VISITS(nodes,rots,base,fract, u64,UQWORD)
+*/
+    SEL(0,80)
+    SEL(1,20)
+    SEL(2,20)
+            
+    #undef X
+}
+
+template <int ExplC, UQWORD hyperparams>
 struct TicTacAiRand : TicTacPlayerBase 
 {
-    Ai_ctx<15000, UQWORD> ai_ctx;
+    Ai_ctx<500, UQWORD> ai_ctx;
    
-    Move selectMove([[maybe_unused]] const TicTacBoard& original, [[maybe_unused]] const int input) //override
+    Move selectMove([[maybe_unused]] const TicTacBoard& original, [[maybe_unused]] const int input) override
     {
         TicTacBoard empty;
         struct RandRoll : Simulator
@@ -127,36 +159,40 @@ struct TicTacAiRand : TicTacPlayerBase
             float simulate(const Board *original) const override
     	    {
     	        int simWins = 0;
-    	        constexpr int MaxRandSims = 27;
+    	        constexpr int MaxRandSims = 20;
     	        // Run simulations:
     	        for (int i=0; i<MaxRandSims; ++i)
     	        {
     	        	TicTacBoard ticTacSim;
     	        	original->cloneInto(&ticTacSim);
-    	        	int nAvailMovesForThisTurn;
+    	        	//int nAvailMovesForThisTurn;
     	        	Move *firstMove, *move;
 
     	        	// Start single sim, run until end:
-    	        	auto outcome = Board::Outcome::running;
-    	        	do
-    	        	{
-    	        	    nAvailMovesForThisTurn = 0;
-    	        	    firstMove = ticTacSim.getAnotherMove();
-    	        	    move = firstMove;
-    	        	    while (move)
-    	        	    {
-    	        	        move->next = ticTacSim.getAnotherMove();
-    	        	        move = move->next;
-    	        	        nAvailMovesForThisTurn += 1;
-    	        	    }
-    	        	    // Pick random move:
-    	        	    nAvailMovesForThisTurn += nAvailMovesForThisTurn==0; // Remove div by 0
-    	        	    nAvailMovesForThisTurn = pcgRand<UDWORD>()%nAvailMovesForThisTurn;
-    	        	    while (nAvailMovesForThisTurn--)
-    	        	        firstMove = firstMove->next;
-    	        	    outcome = ticTacSim.doMove(*firstMove);
-    	        	    ticTacSim.switchPlayer();
-    	        	} while (outcome==Board::Outcome::running);
+                    auto outcome = Board::Outcome::running;
+                    do
+                    {
+                    //    nAvailMovesForThisTurn = 0;
+                    //    firstMove = ticTacSim.getAnotherMove();
+                    //    move = firstMove;
+                    //    while (move)
+                    //    {
+                    //        move->next = ticTacSim.getAnotherMove();
+                    //        move = move->next;
+                    //        nAvailMovesForThisTurn += 1;
+                    //    }
+                        // Pick random move:
+                    //    nAvailMovesForThisTurn += nAvailMovesForThisTurn==0; // Remove div by 0
+                    //    nAvailMovesForThisTurn = pcgRand<UDWORD>()%nAvailMovesForThisTurn;
+                    //    while (nAvailMovesForThisTurn--)
+                    //        firstMove = firstMove->next;
+                        const int nAvailMovesForThisTurn = ticTacSim.getMovesCnt();
+                        if (nAvailMovesForThisTurn == 0)
+                            break;
+                        const int idx = pcgRand<UDWORD>()%nAvailMovesForThisTurn;
+                        outcome = ticTacSim.doMove( ticTacSim.getMove(idx) );
+                        ticTacSim.switchPlayer();
+                    } while (outcome==Board::Outcome::running);
 
     	        	// Count winner/loser:
     	        	if (outcome!=Board::Outcome::draw)
@@ -170,7 +206,7 @@ struct TicTacAiRand : TicTacPlayerBase
                 return winRatio + 1.f; // +1 to convert range from [-1,1] to [0,2] with 1.0 being 50/50.
             }
         } randRoll(original.getCurrentPlayer());
-        const MCTS_result res = mcts__15000_4000_1p20__u64(&empty, &original, ai_ctx, &randRoll);
+        const MCTS_result res = selectMCTS<ExplC, hyperparams>(&empty, &original, ai_ctx, &randRoll);
         return res.move;
     }
 };
@@ -182,13 +218,14 @@ class World
 {
 private:
     TicTacPlayer h1, h2;
-    TicTacAiRand ai1;
+    TicTacAiRand<120,              0> ai1;
+    TicTacAiRand<120, cutoff_scoring> ai2;
     typedef int (*fnReadInput)();
     fnReadInput readInput[3] = { nullptr,
-                                 []() { return gaem_scan(nullptr); },
+                                 []() { return 0; }, //gaem_scan(nullptr); },
                                  []() { return 0; /* this will be ignored by aid */ },
                                };
-    //TicTacPlayerBase* players[3] = { nullptr, &h1, &ai1 };
+    TicTacPlayerBase *players[3] = { nullptr, &ai1, &ai2 };
 public:
     World() { pcgRand<UQWORD>(0x696969ull); }
 
@@ -196,51 +233,54 @@ public:
     {
         TicTacBoard ticTacBoard;
 
-        constexpr int MaxRounds = 69;
-        for (int round=0; round<MaxRounds; ++round)
+        for (int mutations=0; mutations<1; ++mutations)
         {
-            Board::Outcome running = Board::Outcome::running;
-            while (running == Board::Outcome::running)
+            for (int swapped=0; swapped<2; ++swapped)
             {
-                const int currentPlayer = ticTacBoard.getCurrentPlayer();
-                std::printf("player %d\n", currentPlayer);
-                //TicTacPlayerBase *pPlayer = players[currentPlayer];
-                const int sel = readInput[currentPlayer](); // Ignored by ai
-                if (sel == 9)
+                constexpr int MaxRounds = 296;
+                for (int round=0; round<MaxRounds; ++round)
                 {
-                    std::printf("exiting...\n");
-                    return;
+                    Board::Outcome running = Board::Outcome::running;
+                    while (running == Board::Outcome::running)
+                    {
+                        const int currentPlayer = ticTacBoard.getCurrentPlayer();
+                        std::printf("player %d - score: %d %d - rnd: %d\n", currentPlayer, ai1.score, ai2.score, round);
+                        const int sel = readInput[currentPlayer](); // Player only, ignored by ai
+                        if (sel == 9)
+                        {
+                            std::printf("exiting...\n");
+                            return;
+                        }
+                        const Move mv = players[currentPlayer]->selectMove(ticTacBoard, sel);
+                        std::printf("  playing: %d \n", mv.moveIdx);
+                        running = ticTacBoard.doMove(mv);
+                        if (running == Board::Outcome::invalid)
+                        {
+                            std::printf("invalid move \n");
+                            continue;
+                        }
+                        else if (running == Board::Outcome::fin)
+                        { 
+                            players[currentPlayer]->score += 1;
+                            std::printf("\033[1;3%dmwinner: %d \033[0m \n", currentPlayer+1, currentPlayer);
+                        }
+                        else if (running == Board::Outcome::draw)
+                        {
+                            std::printf("\033[0;34mdraw \033[0m \n");
+                        }
+                        ticTacBoard.switchPlayer();
+                        #define PUT(x) std::putchar(x)
+                        PUT(ticTacBoard.pos[0]+'0'); PUT(ticTacBoard.pos[1]+'0'); PUT(ticTacBoard.pos[2]+'0'); PUT('\n');
+                        PUT(ticTacBoard.pos[3]+'0'); PUT(ticTacBoard.pos[4]+'0'); PUT(ticTacBoard.pos[5]+'0'); PUT('\n');
+                        PUT(ticTacBoard.pos[6]+'0'); PUT(ticTacBoard.pos[7]+'0'); PUT(ticTacBoard.pos[8]+'0'); PUT('\n');
+                        #undef PUT
+                    }
+                    ticTacBoard.reset();
                 }
-                //const Move mv = players[currentPlayer]->selectMove(ticTacBoard, sel);
-                Move mv;
-                if (currentPlayer==1)
-                    mv = h1.selectMove(ticTacBoard, sel);
-                else
-                    mv = ai1.selectMove(ticTacBoard, sel);
-                
-                std::printf("  playing: %d \n", mv.moveIdx);
-                running = ticTacBoard.doMove(mv);
-                if (running == Board::Outcome::invalid)
-                {
-                    std::printf("invalid move \n");
-                    continue;
-                }
-                else if (running == Board::Outcome::fin)
-                {
-                    std::printf("\033[1;3%dmwinner: %d \033[0m \n", currentPlayer, currentPlayer);
-                }
-                else if (running == Board::Outcome::draw)
-                {
-                    std::printf("\033[0;34mdraw \033[0m \n");
-                }
-                ticTacBoard.switchPlayer();
-                #define PUT(x) std::putchar(x)
-                PUT(ticTacBoard.pos[0]+'0'); PUT(ticTacBoard.pos[1]+'0'); PUT(ticTacBoard.pos[2]+'0'); PUT('\n');
-                PUT(ticTacBoard.pos[3]+'0'); PUT(ticTacBoard.pos[4]+'0'); PUT(ticTacBoard.pos[5]+'0'); PUT('\n');
-                PUT(ticTacBoard.pos[6]+'0'); PUT(ticTacBoard.pos[7]+'0'); PUT(ticTacBoard.pos[8]+'0'); PUT('\n');
-                #undef PUT
+                players[1]=&ai2; players[2]=&ai1; // swap to ensure both AIs play each side
+                std::printf("swapping\n");
             }
-            ticTacBoard.reset();
+            //mutate!
         }
     }
 };

@@ -1,5 +1,4 @@
 #include "bitvec.hpp"
-#include "asmtypes.hpp"
 
 using Bitvec64 = Bitvec<UQWORD, CHARBITS>;
 using Bitvec32 = Bitvec<UDWORD, CHARBITS>;

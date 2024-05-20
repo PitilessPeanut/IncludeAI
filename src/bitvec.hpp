@@ -1,11 +1,13 @@
 #ifndef BITVEC_HPP
 #define BITVEC_HPP
 
+#include "asmtypes.hpp"
+
 
 /****************************************/
 /*                           Bit vector */
 /****************************************/
-    template <class Int, int Charbits=8>
+    template <class Int, int Charbits=CHARBITS>
     class Bitvec
     {
     public:
@@ -26,7 +28,7 @@
         constexpr bool operator==(const Bitvec<Int, Charbits>& rhs) const
         {
             bool same = true;
-            const auto nInts = size / (sizeof(Int) * Charbits);
+            constexpr auto nInts = size / (sizeof(Int) * Charbits);
             for (int i=0; i<nInts; ++i)
                 same = same && (bitvec[i] == rhs[i]);
             if (!same)
@@ -42,6 +44,13 @@
         constexpr void set(const int pos)
         {
             Int bit = 1;
+            bit <<= pos&(w-1);
+            bitvec[pos>>shift] |= bit;
+        }
+        
+        constexpr void set(const int pos, const bool val)
+        {
+            Int bit = val;
             bit <<= pos&(w-1);
             bitvec[pos>>shift] |= bit;
         }
@@ -99,6 +108,13 @@
 
             bitvec[endPos] &= ~((bitsEnd * !overlap) + (bitsOverlap * overlap));
         }
+
+        constexpr void clearAll()
+        {
+            auto nInts = size / (sizeof(Int) * Charbits);
+            for (decltype(nInts) i=0; i<nInts; ++i)
+                bitvec[i] = 0;
+        }
         
         constexpr Int check(const int pos) const
         {
@@ -139,6 +155,18 @@
         constexpr Int operator[](const int pos) const
         {
             return check(pos);
+        }
+
+        Int popcnt() const
+        {
+            Int cnt = 0;
+            auto nInts = size / (sizeof(Int) * Charbits);
+            for (decltype(nInts) i=0; i<nInts; ++i)
+                if constexpr (sizeof(Int) == sizeof(UQWORD))
+                    cnt += __builtin_popcountll( bitvec[i] );
+                else
+                    cnt += __builtin_popcount( bitvec[i] );
+            return cnt;
         }
     };
 
