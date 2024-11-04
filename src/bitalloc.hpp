@@ -1,5 +1,5 @@
-#ifndef NODE_ALLOCATOR_HPP
-#define NODE_ALLOCATOR_HPP
+#ifndef BIT_ALLOCATOR_HPP
+#define BIT_ALLOCATOR_HPP
 
 #include "asmtypes.hpp"
 
@@ -25,12 +25,12 @@
         }
         return c;
     }
-    
+
     int ctz_runtime(const SDWORD);
     int ctz_runtime(const UDWORD);
     int ctz_runtime(const UQWORD);
     int ctz_runtime(const  UBYTE);
-    
+
 
 // rotate
     template <typename Int>
@@ -47,11 +47,11 @@
 
 // min/max
     template <typename T>
-    constexpr T ptMin(T x, T y) { return x < y ? x : y; }
+    constexpr T nodeAllocatorMin(T x, T y) { return x < y ? x : y; }
     template <typename T>
-    constexpr T ptMax(T x, T y) { return x > y ? x : y; }
+    constexpr T nodeAllocatorMax(T x, T y) { return x > y ? x : y; }
 
-    
+
 /****************************************/
 /*                               Config */
 /****************************************/
@@ -61,11 +61,12 @@
 /****************************************/
 /*                                 Impl */
 /****************************************/
-    template <int NumberOfBuckets, class Inttype, Mode mode=Mode::FAST, bool comptime=false>
-    struct NodeAllocator
+    template <int Size, class Inttype, Mode mode=Mode::FAST, bool comptime=false>
+    struct BitAlloc
     {
     private:
         static constexpr int Intbits = sizeof(Inttype)*CHARBITS;
+        static constexpr int NumberOfBuckets = (Size/Intbits) + 1;
     public:
         Inttype bucketPool[NumberOfBuckets] = {0};
     public:
@@ -92,42 +93,36 @@
                             else
                                 return rotl_runtime(x, amount);
                         };
-           
-            int discoveredSize = ptMin(desiredSize, Intbits*NumberOfBuckets);
+
+            int discoveredSize = nodeAllocatorMin(desiredSize, Intbits*NumberOfBuckets);
             while (discoveredSize>0)
             {
-                if (discoveredSize <= Intbits)
+                constexpr Inttype everyBitSet = ~0;
+                if (discoveredSize < Intbits)
                 {
                     for (int bucketNo=0; bucketNo<NumberOfBuckets; ++bucketNo)
                     {
                         if (ctz(bucketPool[bucketNo]) >= discoveredSize)
                         {
-//                            const bool isEmpty = !bucketPool[bucketNo];
-//                            const Inttype availTail = ctz(bucketPool[bucketNo]) * !isEmpty;
-//
-//                            const Inttype leftMask = ~((everyBitSet << availTail) * !isEmpty);
-//                            const Inttype toggleBits = everyBitSet << ((availTail-discoveredSize) * (availTail>=discoveredSize));
-//                            bucketPool[bucketNo] = bucketPool[bucketNo] | (leftMask&toggleBits);
-                            
-                            constexpr Inttype everyBitSet = ~0;
                             const int availTail = ctz(bucketPool[bucketNo]);
-                            Inttype mask = everyBitSet << discoveredSize; // the 'discoveredSize' here is always <= than Intbits 
+                            Inttype mask = everyBitSet << discoveredSize; // the 'discoveredSize' here is always <= than Intbits
                             mask = rotl(mask, availTail-discoveredSize);
                             bucketPool[bucketNo] = bucketPool[bucketNo] | ~mask;
-                            
+
                             return Pos{ .posOfAvailChunk = static_cast<int>((bucketNo*Intbits) + (Intbits-availTail))
                                       , .len = static_cast<int>(discoveredSize)
                                       };
                         }
                     }
                 }
-                
+
                 if constexpr (mode == Mode::FAST)
                 {
                     const int bucketsRequired = discoveredSize/Intbits;
+                    const bool noRemainder = discoveredSize-(Intbits*bucketsRequired) == 0;
                     for (int bucketNo=0; bucketNo<(NumberOfBuckets-bucketsRequired); ++bucketNo)
                     {
-                        Inttype *iter = &bucketPool[bucketNo + bucketsRequired+1];
+                        Inttype *iter = &bucketPool[bucketNo + bucketsRequired - noRemainder];
                         Inttype *iter2 = iter;
                         bool avail = true;
                         while (iter != &bucketPool[bucketNo])
@@ -135,16 +130,16 @@
                             iter--;
                             avail = avail && *iter == 0;
                         }
-                        
+
                         if (avail)
                         {
                             while (iter2 != &bucketPool[bucketNo])
                             {
                                 iter2--;
-                                *iter2 = -1;
+                                *iter2 = everyBitSet;
                             }
                             constexpr Inttype everyBitSet = ~0;
-                            bucketPool[bucketNo+bucketsRequired] = everyBitSet << (Intbits - (discoveredSize%Intbits));
+                            bucketPool[bucketNo+bucketsRequired-noRemainder] = everyBitSet << (Intbits - (discoveredSize%Intbits));
                             return Pos{ .posOfAvailChunk = static_cast<int>(bucketNo*Intbits)
                                       , .len = static_cast<int>(discoveredSize)
                                       };
@@ -153,7 +148,7 @@
                 }
                 else if constexpr (mode == Mode::TIGHT)
                 {
-                    
+
 //                    const int headBitsUsed = ctz(bucketPool[bucketNo]);
 //                    int remainingBits = discoveredSize - headBitsUsed;
 //                    int emptyBuckets = 0;
@@ -185,15 +180,20 @@
 
             return Pos{ .posOfAvailChunk = 0, .len = 0 };
         }
-        
+
         constexpr void free(const int pos, const int len)
         {
+            // two bugs: pos 0, pos 64 len 128!
             constexpr Inttype everyBitSet = ~0;
             int startBucket = pos/Intbits;
             int endBucket = (pos+len)/Intbits;
             const Inttype maskHead = everyBitSet << (Intbits - (pos%Intbits));
-            const Inttype maskTail = everyBitSet << (Intbits - ((pos+len)%Intbits));
-            
+            Inttype maskTail = everyBitSet << (Intbits - ((pos+len)%Intbits));
+
+            // fix nasty bug where additional slots get deleted when the delete range reaches the edge:
+            if (((pos+len)-(endBucket*Intbits)) == 0) // ((pos+len) % Intbits) == 0
+                maskTail = 0;
+
             if (startBucket == endBucket)
             {
                 bucketPool[startBucket] = (maskHead | ~maskTail) & bucketPool[startBucket];
@@ -212,7 +212,7 @@
                     bucketPool[startBucket] = 0;
             }
         }
-        
+
         constexpr void clearAll()
         {
             for (int i=0; i<NumberOfBuckets; ++i)
@@ -221,7 +221,6 @@
     };
 
 
-#else
+#else // BIT_ALLOCATOR_HPP
   #error "double include"
-#endif // NODE_ALLOCATOR_HPP
-
+#endif // BIT_ALLOCATOR_HPP

@@ -69,7 +69,7 @@
         return fib(i-1) + fib(i-2);
     }
 
-    
-#else
-  #error double include
+
+#else // MICRO_MATH_HPP
+  #error "double include"
 #endif // MICRO_MATH_HPP

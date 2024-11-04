@@ -1,92 +1,94 @@
-#include "node_allocator.hpp"
+#include "bitalloc.hpp"
 #if defined(__x86_64__) || defined(__x86_64) || defined(__amd64__) || defined(__amd64) || defined(_M_X64)
   #include <immintrin.h>
 #elif defined(__aarch64__)
   #include <arm_neon.h>
-#else
+#elif defined(__wasm__)
+  // nothing?
+#else // not "x86_64" etc.
   #error "unknown arch"
-#endif
+#endif // unknown
 
- 
+
 /****************************************/
 /*                                Tools */
 /****************************************/
 // ctz
-    int ctz_runtime(const UBYTE val) 
-    { 
+    int ctz_runtime(const UBYTE val)
+    {
         #ifdef _WIN32
           return _tzcnt_u32( (unsigned int)val );
         #else
-          return 0 ? (sizeof(UBYTE )*CHARBITS) : __builtin_ctz(val); 
+          return (val==0) ? (sizeof(UBYTE )*CHARBITS) : __builtin_ctz(val);
         #endif
     }
-    
-    int ctz_runtime(const UDWORD val) 
-    { 
+
+    int ctz_runtime(const UDWORD val)
+    {
         #ifdef _WIN32
           return _tzcnt_u32( val );
         #else
-          return 0 ? (sizeof(UDWORD)*CHARBITS) : __builtin_ctzl(val); 
+          return (val==0) ? (sizeof(UDWORD)*CHARBITS) : __builtin_ctzl(val);
         #endif
     }
-    
-    int ctz_runtime(const UQWORD val) 
-    { 
+
+    int ctz_runtime(const UQWORD val)
+    {
         #ifdef _WIN32
-          return _tzcnt_u64( val ); 
+          return _tzcnt_u64( val );
         #else
-          return 0 ? (sizeof(UQWORD)*CHARBITS) : __builtin_ctzll(val); 
+          return (val==0) ? (sizeof(UQWORD)*CHARBITS) : __builtin_ctzll(val);
         #endif
     }
-    
-    int ctz_runtime(const SDWORD val) 
-    { 
+
+    int ctz_runtime(const SDWORD val)
+    {
         #ifdef _WIN32
-          return _tzcnt_u32( (unsigned int)val ); 
+          return _tzcnt_u32( (unsigned int)val );
         #else
-          return 0 ? (sizeof(SDWORD)*CHARBITS) : __builtin_ctz(val); 
+          return (val==0) ? (sizeof(SDWORD)*CHARBITS) : __builtin_ctz(val);
         #endif
     }
 
 
 // rotate
-    SDWORD rotl_runtime(const SDWORD x, int amount) 
-    { 
+    SDWORD rotl_runtime(const SDWORD x, int amount)
+    {
         #ifdef _WIN32
           return _rotl(x, amount);
         #else
-          return rotl_comptime(x, amount); 
+          return rotl_comptime(x, amount);
         #endif
     }
-    
-    UDWORD rotl_runtime(const UDWORD x, int amount) 
-    { 
+
+    UDWORD rotl_runtime(const UDWORD x, int amount)
+    {
         #ifdef _WIN32
           _rotl(x, amount);
         #else
-          return rotl_comptime(x, amount); 
+          return rotl_comptime(x, amount);
         #endif
     }
-    
-    UQWORD rotl_runtime(const UQWORD x, int amount) 
-    { 
+
+    UQWORD rotl_runtime(const UQWORD x, int amount)
+    {
         #ifdef _WIN32
           return _rotl64(x, amount);
         #else
-          return rotl_comptime(x, amount); 
+          return rotl_comptime(x, amount);
         #endif
     }
-    
-    UBYTE  rotl_runtime(const UBYTE x, int amount) 
-    { 
+
+    UBYTE  rotl_runtime(const UBYTE x, int amount)
+    {
         #ifdef _WIN32
           return _rotl8(x, amount);
         #else
-          return rotl_comptime(x, amount); 
+          return rotl_comptime(x, amount);
         #endif
     }
-    
-        
+
+
 /****************************************/
 /*                                Tests */
 /****************************************/
@@ -97,8 +99,8 @@
                       const auto availNodes = test.largestAvailChunk(1);
                       return (availNodes.len==1) && (availNodes.posOfAvailChunk==0);
                   }()
-                 );
-
+                 );*/
+/*
     static_assert([]
                   {
                       constexpr bool comptime = true;
@@ -137,12 +139,13 @@
                       testAllocator.free(30, 6);
                       ok = ok && testAllocator.bucketPool[3] == 0;
                       ok = ok && testAllocator.bucketPool[4] == 0b00001111;
+
 //                      posB = testAllocator.largestAvailChunk(20);
      //   ok = ok && pos.pos==31 ; //&& pos.len<20;
        // ok = ok && testAllocator.bucketPool[4] == 0b00011111;
-                        
+
                       return ok;
                   }()
                  );
 
-          */       
+                 */

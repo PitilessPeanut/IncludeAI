@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 
 files = [
-("src/node_allocator.hpp", ["src/asmtypes.hpp"]),
-("src/node_allocator.cpp", ["src/node_allocator.hpp"]),
-("src/ai.hpp", ["src/asmtypes.hpp", "src/node_allocator.hpp"]),
-("src/ai.cpp", ["src/ai.hpp", "src/micro_math.hpp"])
+("src/asmtypes.hpp",  []),
+("src/bitalloc.hpp", []),
+("src/bitalloc.cpp", []),
+("src/micro_math.hpp", []),
+("src/micro_math.cpp", []),
+("src/ai.hpp", []),
 ]
 
 # for testing only
@@ -42,38 +44,54 @@ unique = []
 [unique.append(elem) for elem in sorted if elem not in unique]
 for c in unique:
     print(c[0]+" - "+" ".join(c[1]))
-    
+
 merge_result = """/*
-    You must add '#define INCLUDEAI_IMPLEMENTATION' before #include'ing this in ONE source file.
+    You must add '#define INCLUDEAI_IMPLEMENTATION' before '#include'ing this in ONE source file.
     Like this:
         #define INCLUDEAI_IMPLEMENTATION
         #include \"includeai.hpp\"
 */\n\n"""
 
-license = """/*
+license = """\n/*
+MIT
+2024 Shaiden Spreitzer (aka. Pitiless Peanut, Professor Peanut, etc...)
 */\n
 """
 
 merge_result += "#ifndef INCLUDEAI_HPP\n#define INCLUDEAI_HPP\n\n"
 merge_result += "#ifdef INCLUDEAI_IMPLEMENTATION\n\n\n"
 merge_result += """#include <cmath>
+#include <concepts>
 #if defined(__x86_64__) || defined(__x86_64) || defined(__amd64__) || defined(__amd64) || defined(_M_X64)
   #include <immintrin.h>
+#elif defined(__aarch64__)
+  #include <arm_neon.h>
+#elif defined(__wasm__)
+  // nothing?
+#else
+  #error "unknown arch"
 #endif\n\n
+namespace include_ai {\n\n\n
 """
+
+remove = ["#include", "_HPP", "double include", "x86_64", "aarch64", "defined(__wasm__)", "nothing", "unknown", "include_ai"]
 
 for filename in unique:
     f = open(filename[0], "r")
     lines = f.readlines()
     for code_line in lines:
-        if code_line.startswith("#include \"") == False:
+        if any(x in code_line for x in remove):
+            pass
+        else:
             merge_result += code_line
     merge_result += "\n\n"
 
-merge_result += "#endif // INCLUDEAI_IMPLEMENTATION\n\n\n#endif // INCLUDEAI_HPP\n"
+merge_result += """} // namespace single_header_ai\n\n\n
+#endif // INCLUDEAI_IMPLEMENTATION\n\n
+#endif // INCLUDEAI_HPP\n
+"""
 merge_result += license
 
 open("./includeai.hpp", "w+").write(merge_result + "\n")
 
 print("success")
-

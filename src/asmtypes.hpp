@@ -55,8 +55,8 @@ static_assert(sizeof(UDWORD) == (sizeof(UWORD)<<1));
 #endif
 typedef SWORD SSHORT;
 
-// 8 bit: 
-constexpr decltype(sizeof(1)) CHARBITS = []{ return 32u / sizeof( UDWORD ); }();
+// 8 bit:
+constexpr decltype(sizeof(int)) CHARBITS = []{ return 32u / sizeof( UDWORD ); }();
 typedef unsigned char UBYTE;
 typedef signed char SBYTE;
 static_assert((sizeof(UBYTE)*CHARBITS) == 8);
@@ -74,4 +74,3 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
 
 
 #endif // ASMTYPES_HPP
-
