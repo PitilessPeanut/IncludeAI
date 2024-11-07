@@ -64,7 +64,7 @@ public:
         for (int i=15; i<(11*11); ++i)
         {
             // find valid moves:
-            const bool open = openpos[i];// == 1;
+            const bool open = openpos[i];
             if ((pos[i]>'0') && (pos[i]<248) && open)
                 availMoves[availMovesCtr++] = i;
         }
@@ -160,11 +160,9 @@ struct YavalathPlayer : YavalathPlayerBase
 {
     Move selectMove([[maybe_unused]] const YavalathBoard& original, [[maybe_unused]] const int input) override
     {
-        int i=15;
-        for (; i<(11*11); ++i)
+        for (int i=15; i<(11*11); ++i)
             if (original.pos[i] == input)
-                break;
-        return Move{i};
+                return Move{i};
     }
 };
 
@@ -181,7 +179,7 @@ struct YavalathAiMCTS : YavalathPlayerBase
             return 121/2;
         }
         const MCTS_result res =
-            mcts<90000, 1400, 30, 3, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
+            mcts<90000, 1400, 20, 3, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
         return res.move;
     }
 };
@@ -251,7 +249,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[])
                     c = c==(248+1) ? 'X' : 'O';
                     std::printf("\033[1;3%dm", c=='X' ? 1 : 4);
                 }
-                else if (yavalathBoard.openpos[idx]) //((yavalathBoard.openpos[idx>>6] >> (idx&63)) & 1)
+                else if (yavalathBoard.openpos[idx])
                     ;
                 else
                     c = '.' * !!c;
@@ -274,7 +272,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[])
                     c = c==(248+1) ? 'X' : 'O';
                     std::printf("\033[1;3%dm", c=='X' ? 1 : 4);
                 }
-                else if (yavalathBoard.openpos[idx]) // ((yavalathBoard.openpos[idx>>6] >> (idx&63)) & 1)
+                else if (yavalathBoard.openpos[idx])
                     ;
                 else
                     c = '.' * !!c;
