@@ -7,6 +7,7 @@ files = [
 ("src/micro_math.hpp", []),
 ("src/micro_math.cpp", []),
 ("src/ai.hpp", []),
+("src/ai.cpp", [])
 ]
 
 # for testing only
@@ -54,7 +55,7 @@ merge_result = """/*
 
 license = """\n/*
 MIT
-2024 Shaiden Spreitzer (aka. Pitiless Peanut, Professor Peanut, etc...)
+2025 Shaiden Spreitzer (aka. Pitiless Peanut, Professor Peanut, etc...)
 */\n
 """
 
