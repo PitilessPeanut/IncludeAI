@@ -7,7 +7,8 @@
 /****************************************/
     struct TicTacTest
     {
-        using AvailMoves = include_ai::Move[9];
+        using Move = int;
+        using AvailMoves = Move[9];
         unsigned char pos[9+1] = {0,0,0,
                                   0,0,0,
                                   0,0,0
@@ -28,7 +29,7 @@
             return dst;
         }
 
-        constexpr int generateMovesAndGetCnt(include_ai::Move *availMoves)
+        constexpr int generateMovesAndGetCnt(TicTacTest::Move *availMoves)
         {
             int availMovesCtr = 0;
             for (int i=0; i<9; ++i)
@@ -40,7 +41,7 @@
             return availMovesCtr;
         }
 
-        constexpr include_ai::Outcome doMove(const include_ai::Move mv)
+        constexpr include_ai::Outcome doMove(const TicTacTest::Move mv)
         {
             // checking if valid input only needed when running on a server:
             if (pos[mv]) [[unlikely]]
@@ -125,11 +126,11 @@
                       t.pos[3]=0; t.pos[4]=1; t.pos[5]=0;
                       t.pos[6]=0; t.pos[7]=0; t.pos[8]=0;
                       t.currentPlayer = 2;
-                      SWORD res = minimax(t, 10);
+                      SWORD res = minimax<TicTacTest, TicTacTest::Move>(t, 10);
                       bool ok = res == 0; // Player 2 can still play position 8!
                       t.pos[5] = 2; // ... but plays  5 instead
                       t.currentPlayer = 1;
-                      res = minimax(t, 9);
+                      res = minimax<TicTacTest, TicTacTest::Move>(t, 9);
                       return ok && (res == 1); // Player 2 lost!
                   }()
                  );
@@ -142,7 +143,7 @@
                       t.pos[3]=0; t.pos[4]=1; t.pos[5]=0;
                       t.pos[6]=0; t.pos[7]=2; t.pos[8]=1;
                       t.currentPlayer = 1;
-                      const SWORD res = minimax(t, 9);
+                      const SWORD res = minimax<TicTacTest, TicTacTest::Move>(t, 9);
                       // This position is a guaranteed win for '1':
                       return res == 1;
                   }()
@@ -156,7 +157,7 @@
                       t.pos[3]=0; t.pos[4]=1; t.pos[5]=0;
                       t.pos[6]=0; t.pos[7]=0; t.pos[8]=0;
                       t.currentPlayer = 1;
-                      const SWORD res = minimax(t, 9);
+                      const SWORD res = minimax<TicTacTest, TicTacTest::Move>(t, 9);
                       // winner not yet determined:
                       return res == 0;
                   }()
@@ -170,7 +171,7 @@
                       t.pos[3]=1; t.pos[4]=1; t.pos[5]=2;
                       t.pos[6]=0; t.pos[7]=2; t.pos[8]=1;
                       t.currentPlayer = 1;
-                      const SWORD res = minimax(t, 9);
+                      const SWORD res = minimax<TicTacTest, TicTacTest::Move>(t, 9);
                       // draw:
                       return res == 0;
                   }()
@@ -184,7 +185,7 @@
                       t.pos[3]=2; t.pos[4]=0; t.pos[5]=0;
                       t.pos[6]=2; t.pos[7]=0; t.pos[8]=1;
                       t.currentPlayer = 1;
-                      const SWORD res = minimax(t, 9);
+                      const SWORD res = minimax<TicTacTest, TicTacTest::Move>(t, 9);
                       return res == 1;
                   }()
                  );
