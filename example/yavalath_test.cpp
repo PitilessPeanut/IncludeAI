@@ -21,8 +21,8 @@ char gaem_scan2([[maybe_unused]] void *pEverything)
 class YavalathBoard
 {
 public:
-    static constexpr int CELLS = 61;
-    using AvailMoves = include_ai::Move[CELLS];
+    using YavMove = int;
+    using StorageForMoves = YavMove[61];
     unsigned char pos[11*11] =
         {0, 0,  0,  0,  0,  0,  0,  0,  0,  0, 0,
          0, 0,  0,  0,  0, 'a','b','c','d','e',0,
@@ -58,7 +58,7 @@ public:
         return dst;
     }
 
-    int generateMovesAndGetCnt(include_ai::Move *availMoves)
+    int generateMovesAndGetCnt(YavMove *availMoves)
     {
         int availMovesCtr = 0;
         for (int i=15; i<(11*11); ++i)
@@ -72,11 +72,13 @@ public:
         return availMovesCtr;
     }
 
-    Outcome doMove(const Move mv)
+    Outcome doMove(const YavMove mv)
     {
         const unsigned char currentId = currentPlayer+248;
         pos[mv] = currentId;
         constexpr decltype(mv) z=0, edge=11*11;
+        openpos[std::clamp(mv-33, z, edge)] = true;
+        openpos[std::clamp(mv-30, z, edge)] = true;
         openpos[std::clamp(mv-22, z, edge)] = true;
         openpos[std::clamp(mv-21, z, edge)] = true;
         openpos[std::clamp(mv-20, z, edge)] = true;
@@ -84,10 +86,12 @@ public:
         openpos[std::clamp(mv-11, z, edge)] = true;
         openpos[std::clamp(mv-10, z, edge)] = true;
         openpos[std::clamp(mv- 9, z, edge)] = true;
+        openpos[std::clamp(mv- 3, z, edge)] = true;
         openpos[std::clamp(mv- 2, z, edge)] = true;
         openpos[std::clamp(mv- 1, z, edge)] = true;
         openpos[std::clamp(mv+ 1, z, edge)] = true;
         openpos[std::clamp(mv+ 2, z, edge)] = true;
+        openpos[std::clamp(mv+ 3, z, edge)] = true;
         openpos[std::clamp(mv+ 9, z, edge)] = true;
         openpos[std::clamp(mv+10, z, edge)] = true;
         openpos[std::clamp(mv+11, z, edge)] = true;
@@ -95,6 +99,8 @@ public:
         openpos[std::clamp(mv+20, z, edge)] = true;
         openpos[std::clamp(mv+21, z, edge)] = true;
         openpos[std::clamp(mv+22, z, edge)] = true;
+        openpos[std::clamp(mv+30, z, edge)] = true;
+        openpos[std::clamp(mv+33, z, edge)] = true;
         int haveThreeHoriz=0, haveFourHoriz=0, haveThreeVert=0, haveFourVert=0, haveThreeDiag=0, haveFourDiag=0;
         int loser=0;
         for (int y=1; y<11; ++y)
@@ -152,34 +158,35 @@ public:
 struct YavalathPlayerBase
 {
     int score = 0;
-    virtual Move selectMove(const YavalathBoard&, const int) = 0;
+    virtual YavalathBoard::YavMove selectMove(const YavalathBoard&, const int) = 0;
     virtual ~YavalathPlayerBase() = default;
 };
 
 struct YavalathPlayer : YavalathPlayerBase
 {
-    Move selectMove([[maybe_unused]] const YavalathBoard& original, [[maybe_unused]] const int input) override
+    YavalathBoard::YavMove selectMove([[maybe_unused]] const YavalathBoard& original, [[maybe_unused]] const int input) override
     {
         for (int i=15; i<(11*11); ++i)
             if (original.pos[i] == input)
-                return Move{i};
+                return YavalathBoard::YavMove{i};
     }
 };
 
 struct YavalathAiMCTS : YavalathPlayerBase
 {
     bool fresh = true;
-    Ai_ctx<90000, UQWORD> ai_ctx;
+    Ai_ctx<90000, YavalathBoard::YavMove, UQWORD> ai_ctx;
 
-    Move selectMove([[maybe_unused]] const YavalathBoard& original, [[maybe_unused]] const int input) override
+    YavalathBoard::YavMove selectMove([[maybe_unused]] const YavalathBoard& original, [[maybe_unused]] const int input) override
     {
         if (fresh)
         {
             fresh = false;
             return 121/2;
         }
+        constexpr int simDepth=21, minimaxDepth=3;
         const MCTS_result res =
-            mcts<90000, 1400, 20, 3, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
+            mcts<90000, 1400, simDepth, minimaxDepth, YavalathBoard::YavMove, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
         return res.move;
     }
 };
@@ -211,11 +218,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[])
     while (running == Outcome::running)
     {
         {
-            // prommpt:
+            // prompt:
             const int currentPlayer = yavalathBoard.getCurrentPlayer();
             std::printf("player %d - score: %d %d - rnd: %d\n", currentPlayer, players[1]->score, players[2]->score, 666);
             const char sel = readInput[currentPlayer](); // Player only, ignored by ai
-            const Move mv = players[currentPlayer]->selectMove(yavalathBoard, sel);
+            const YavalathBoard::YavMove mv = players[currentPlayer]->selectMove(yavalathBoard, sel);
             running = yavalathBoard.doMove(mv);
             if (running == Outcome::invalid)
             {

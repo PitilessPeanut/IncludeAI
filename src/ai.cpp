@@ -8,7 +8,7 @@
     struct TicTacTest
     {
         using Move = int;
-        using AvailMoves = Move[9];
+        using StorageForMoves = Move[9];
         unsigned char pos[9+1] = {0,0,0,
                                   0,0,0,
                                   0,0,0
