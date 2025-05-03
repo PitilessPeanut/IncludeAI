@@ -1,7 +1,8 @@
 #include <cstdio>
 #define INCLUDEAI_IMPLEMENTATION
 #define AI_DEBUG
-#include "../includeai.hpp"
+#include "../src/micro_math.hpp"
+#include "../src/ai.hpp"
 #include <vector>
 
 

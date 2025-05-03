@@ -38,7 +38,12 @@ Calling `mcts<Iterations, Max simulation depth, Minimax depth, Move type, Bitfie
 It should work. See how to include above^, compile with SIMD enabled: `em++ mygame.cpp -o mygame.js -s WASM=1 -s SIMD=1`
 
 ### About Trap States
-Trap states are fundamentally a resource issue. Shown here is an example of the game Yavalath:
+Trap states happen because the random selection of child branches misses a branch that may lead to a quick loss. Trying to force the search to explore all possible child branches may lead to the tree becoming excessively shallow, or "near-sighted", missing out on more complex strategies at a deeper level. This problem seems unsolvable unless you have an iq of 150+ (which I don't claim to have...). If the *simulation* part could yield a clear result (win/loss) then the ai could play perfectly. However, in such a case we might as well replace the entire search tree with a simple minimax since we would no longer be dealing with a probabilistic search! Instead we split the simulation part into three pieces:
+1st: minimax up to a predefined depth
+2nd: if that fails: neural network estimation
+3rd: if estimations vague or uncertain: random rollout
+With this approach we have effectively eliminated the *shallow trap* problem for the vast majority of cases, assuming enough resources have been made available to complete the search:
+ Shown here is an example of the game Yavalath:
 ```
 // a = ai
 // p = player
@@ -76,7 +81,8 @@ MCTS_result mcts_res = mcts<1000, 21, 3, YavalathBoard::YavMove, UQWORD>(view, a
     . . . . .                          . . . . .                        
                                                                                        
 ```
-Some initial tests suggest that past a number of iterations of about 8-9000 (and ~600000+ nodes), the AI becomes effectively undefeatable. These numbers may be more or less depending on you game/usecase/etc.
+Some initial tests suggest that past a number of iterations of about 8-9000 (and ~600000+ nodes), the AI becomes effectively undefeatable (in Yavalath!). These numbers may vary depending on your game/usecase/etc.
+Attention!!! Keep in mind that eliminating Trap States is not going to make the Ai unbeatable in every game; it simply means that the ai wont be so stupid any more...
 
 
 ### Limitations / Assumtions
