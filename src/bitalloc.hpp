@@ -3,13 +3,15 @@
 
 #include "asmtypes.hpp"
 
+#include <concepts>
+#include <type_traits>
 
 /****************************************/
 /*                                Tools */
 /****************************************/
 // ctz
     template <typename Int>
-    consteval int ctz_comptime(Int val)
+    constexpr int ctz_comptime(Int val)
     {
         Int c=0;  // output: c will count val's trailing zero bits,
                   // so if val is 1101000, then c will be 3
@@ -47,35 +49,42 @@
 
 // min/max
     template <typename T>
-    constexpr T nodeAllocatorMin(T x, T y) { return x < y ? x : y; }
+    inline constexpr T bitAllocatorMin(T x, T y) { return x < y ? x : y; }
     template <typename T>
-    constexpr T nodeAllocatorMax(T x, T y) { return x > y ? x : y; }
+    inline constexpr T bitAllocatorMax(T x, T y) { return x > y ? x : y; }
+
+
+/****************************************/
+/*                             Concepts */
+/****************************************/
+    template<typename T>
+    concept BitfieldIntType = std::is_unsigned_v<T> && std::is_integral_v<T>;
 
 
 /****************************************/
 /*                               Config */
 /****************************************/
-    enum class Mode { FAST, TIGHT };
+    enum class BitAlloc_Mode { FAST, TIGHT };
 
 
 /****************************************/
 /*                                 Impl */
 /****************************************/
-    template <int Size, class Inttype, Mode mode=Mode::FAST, bool comptime=false>
+    template <int Size, BitfieldIntType BitfieldType, BitAlloc_Mode mode=BitAlloc_Mode::FAST, bool comptime=false>
     struct BitAlloc
     {
     private:
-        static constexpr int Intbits = sizeof(Inttype)*CHARBITS;
-        static constexpr int NumberOfBuckets = (Size/Intbits) + 1;
+        static constexpr int Intbits = sizeof(BitfieldType)*CHARBITS;
+        static constexpr int NumberOfBuckets = (Size%Intbits)==0 ? (Size/Intbits) : (Size/Intbits)+1;
     public:
-        Inttype bucketPool[NumberOfBuckets] = {0};
+        BitfieldType bucketPool[NumberOfBuckets] = {0};
     public:
         constexpr auto largestAvailChunk(const int desiredSize)
         {
             struct Pos
             {
                 int posOfAvailChunk;
-                int len;
+                int length;
             };
 
             auto ctz = [](auto val)
@@ -94,60 +103,59 @@
                                 return rotl_runtime(x, amount);
                         };
 
-            int discoveredSize = nodeAllocatorMin(desiredSize, Intbits*NumberOfBuckets);
+            int discoveredSize = bitAllocatorMin(desiredSize, Intbits*NumberOfBuckets);
             while (discoveredSize>0)
             {
-                constexpr Inttype everyBitSet = ~0;
-                if (discoveredSize < Intbits)
+                constexpr BitfieldType everyBitSet = ~0;
+                if (discoveredSize <= Intbits)
                 {
                     for (int bucketNo=0; bucketNo<NumberOfBuckets; ++bucketNo)
                     {
-                        if (ctz(bucketPool[bucketNo]) >= discoveredSize)
+                        const int availTail = ctz(bucketPool[bucketNo]);
+                        if (availTail >= discoveredSize)
                         {
-                            const int availTail = ctz(bucketPool[bucketNo]);
-                            Inttype mask = everyBitSet << discoveredSize; // the 'discoveredSize' here is always <= than Intbits
+                            BitfieldType mask = everyBitSet << discoveredSize; // the 'discoveredSize' here is always <= than Intbits
                             mask = rotl(mask, availTail-discoveredSize);
                             bucketPool[bucketNo] = bucketPool[bucketNo] | ~mask;
 
-                            return Pos{ .posOfAvailChunk = static_cast<int>((bucketNo*Intbits) + (Intbits-availTail))
-                                      , .len = static_cast<int>(discoveredSize)
+                            const BitfieldType posOfAvailChunk = (bucketNo*Intbits) + (Intbits-availTail);
+                            return Pos{ .posOfAvailChunk = static_cast<int>(posOfAvailChunk)
+                                      , .length = static_cast<int>(discoveredSize)
                                       };
                         }
                     }
                 }
-
-                if constexpr (mode == Mode::FAST)
+                else
                 {
-                    const int bucketsRequired = discoveredSize/Intbits;
-                    const bool noRemainder = discoveredSize-(Intbits*bucketsRequired) == 0;
-                    for (int bucketNo=0; bucketNo<(NumberOfBuckets-bucketsRequired); ++bucketNo)
+                    if constexpr (mode == BitAlloc_Mode::FAST)
                     {
-                        Inttype *iter = &bucketPool[bucketNo + bucketsRequired - noRemainder];
-                        Inttype *iter2 = iter;
-                        bool avail = true;
-                        while (iter != &bucketPool[bucketNo])
+                        const int bucketsRequired = discoveredSize/Intbits;
+                        const int remainingBits = discoveredSize-(Intbits*bucketsRequired);
+                        const bool needsExactFullBuckets = remainingBits == 0;
+                        for (int bucketNo=0; bucketNo<(NumberOfBuckets-bucketsRequired+needsExactFullBuckets); ++bucketNo)
                         {
-                            iter--;
-                            avail = avail && *iter == 0;
-                        }
+                            bool avail = true;
+                            for (int i=0; i<bucketsRequired; ++i)
+                                avail = avail && bucketPool[bucketNo+i] == 0;
 
-                        if (avail)
-                        {
-                            while (iter2 != &bucketPool[bucketNo])
+                            if (avail)
                             {
-                                iter2--;
-                                *iter2 = everyBitSet;
+                                for (int i=0; i<bucketsRequired; ++i)
+                                    bucketPool[bucketNo+i] = everyBitSet;
+
+                                if (remainingBits > 0)
+                                {
+                                    const BitfieldType mask = everyBitSet << (Intbits - remainingBits);
+                                    bucketPool[bucketNo+bucketsRequired-needsExactFullBuckets] = mask;
+                                }
+                                return Pos{ .posOfAvailChunk = static_cast<int>(bucketNo*Intbits)
+                                          , .length = static_cast<int>(discoveredSize)
+                                          };
                             }
-                            constexpr Inttype everyBitSet = ~0;
-                            bucketPool[bucketNo+bucketsRequired-noRemainder] = everyBitSet << (Intbits - (discoveredSize%Intbits));
-                            return Pos{ .posOfAvailChunk = static_cast<int>(bucketNo*Intbits)
-                                      , .len = static_cast<int>(discoveredSize)
-                                      };
                         }
                     }
-                }
-                else if constexpr (mode == Mode::TIGHT)
-                {
+                    else if constexpr (mode == BitAlloc_Mode::TIGHT)
+                    {
 
 //                    const int headBitsUsed = ctz(bucketPool[bucketNo]);
 //                    int remainingBits = discoveredSize - headBitsUsed;
@@ -174,21 +182,22 @@
 //                                  , .len = discoveredSize
 //                                  };
 //                    }
+                    }
                 }
                 discoveredSize -= 1;
             } // while (discoveredSize>0)
 
-            return Pos{ .posOfAvailChunk = 0, .len = 0 };
+            return Pos{ .posOfAvailChunk = -1, .length = 0 };
         }
 
         constexpr void free(const int pos, const int len)
         {
             // two bugs: pos 0, pos 64 len 128!
-            constexpr Inttype everyBitSet = ~0;
+            constexpr BitfieldType everyBitSet = ~0;
             int startBucket = pos/Intbits;
             int endBucket = (pos+len)/Intbits;
-            const Inttype maskHead = everyBitSet << (Intbits - (pos%Intbits));
-            Inttype maskTail = everyBitSet << (Intbits - ((pos+len)%Intbits));
+            const BitfieldType maskHead = everyBitSet << (Intbits - (pos%Intbits));
+            BitfieldType maskTail = everyBitSet << (Intbits - ((pos+len)%Intbits));
 
             // fix nasty bug where additional slots get deleted when the delete range reaches the edge:
             if (((pos+len)-(endBucket*Intbits)) == 0) // ((pos+len) % Intbits) == 0

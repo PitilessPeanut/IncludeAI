@@ -3,9 +3,14 @@
 
 #include "asmtypes.hpp"
 #include "bitalloc.hpp"
+#include "similarity.hpp"
+//#include
 #include <concepts>
 #include <cmath>
 #include <cstdio>
+#if defined(AI_DEBUG)
+  #include <assert.h>
+#endif
 
 namespace include_ai {
 
@@ -19,28 +24,33 @@ namespace include_ai {
 // log
     inline constexpr float aiLog(auto x) { return std::log(x-0.f); }
 
+// abs
+    inline constexpr auto aiAbs(auto x) { return std::abs(x); }
+
+// min/max
+    inline float aiMin(float x, float y) { return std::fminf(x, y); }
+    inline float aiMax(float x, float y) { return std::fmaxf(x, y); }
+    template <typename T>
+    inline constexpr T aiMin(T x, T y) { return x < y ? x : y; }
+    template <typename T>
+    inline constexpr T aiMax(T x, T y) { return x > y ? x : y; }
+
 // assert/debug
-   // #if defined(AI_DEBUG)
-      #include <assert.h>
+    #if defined(AI_DEBUG)
       #define aiAssert(x) assert(x)
       #define aiDebug(x) x
-  //  #else
-  //    #define aiAssert(x)
-  // #define aiDebug(x)
-   // #endif
+    #else
+      #define aiAssert(x)
+      #define aiDebug(x)
+    #endif
 
 
 /****************************************/
-/* A 'move' by a user/player within the */
-/* game context                         */
+/*   A 'move'/'action' by a user/player */
+/* within the game context              */
 /****************************************/
-template <typename T>
-concept GameMove = std::integral<T>; // todo!!!!!!
-    //#if defined(AI_32BIT_ONLY)
-//      using Move = SDWORD; // A generic 'move'. Can represent anything
-    //#else
-      using Move = SQWORD; // ^^
-  //  #endif
+    template <typename T>
+    concept GameMove = std::movable<T> || std::copyable<T>;
 
 
 /****************************************/
@@ -50,13 +60,27 @@ concept GameMove = std::integral<T>; // todo!!!!!!
 
 
 /****************************************/
-/*                        Board concept */
+/*          A view of the game from the */
+/* perspective of a player as a Concept */
+/*                                      */
+/* This 'view' can be either the actual */
+/* game state (complete information) or */
+/* a guess/estimation of the game state */
+/* percieved by one player (incomplete  */
+/* information)                         */
 /****************************************/
+  //  template <typename T>
+  //  concept convertible_to_ptrFloat =
+  //      std::convertible_to<T, HALF *> ||
+  //      std::convertible_to<T, DOUBLE *> ||
+   //     std::convertible_to<T, FLOAT *>;
+
     template <typename T>
-    concept Gameboard =
-        !std::copy_constructible<T>
-        && !std::is_copy_assignable<T>::value
-        && requires (T obj, const T cobj)
+    concept Gameview =
+        !std::copy_constructible<T> &&
+        !std::is_copy_assignable<T>::value &&
+        !std::copyable<T> &&
+        requires (T obj, const T cobj)
         {
             {cobj.clone()} -> std::same_as<T>;
             {obj.generateMovesAndGetCnt(nullptr)} -> std::convertible_to<int>;
@@ -64,12 +88,20 @@ concept GameMove = std::integral<T>; // todo!!!!!!
             {obj.switchPlayer()};
             {cobj.getCurrentPlayer()} -> std::equality_comparable;
             {cobj.getWinner()} -> std::equality_comparable;
+           // {obj.getNetworkInputs()} -> convertible_to_ptrFloat;
         };
 
 
 /****************************************/
-/*      Node (should fit into 64 bytes) */
+/*       Node (should be converted from */
+/*        an 'array of structs' into a  */
+/*       'struct of arrays'...)         */
+/* Attn: The Node does *not* store a    */
+/* copy of the Board, instead the game  */
+/* state must be kept in sync during    */
+/* tree expansion (HEADACHE ATTACK!!!)  */
 /****************************************/
+    template <GameMove Move>
     struct Node
     {
         static constexpr SWORD never_expanded = -1;
@@ -78,13 +110,18 @@ concept GameMove = std::integral<T>; // todo!!!!!!
         SWORD    createdBranches = 0;             // Must be signed!
         Node    *parent = nullptr;
         Node    *branches = nullptr;  // Must be initialized to NULL
-        float    score = 0.f; //0.01f;    // Start with some positive value to prevent divide by zero error
-        float    UCBscore;         // Placeholder used during UCB calc.
+        FLOAT    score = 0.f; //0.01f;    // Start with some positive value to prevent divide by zero error
         Move     moveHere;
         SWORD    visits = 1; // Must be '1' to stop 'nan' // todo if changed also chage in ucbselect()!
-
+        FLOAT    UCBscore;         // Placeholder used during UCB calc.
+        #ifdef INCLUDEAI__ADD_SCORE_FOR_TERMINAL_NODES
+          FLOAT    terminalScore = 0.f; // Keeping another separate score for terminal nodes may not make sense,
+                                        // since a terminal condition may pop up at any level of the tree,
+                                        // which means that by the time we are back at the root, a wrong node
+                                        // could end up having a higher score than the correct one...
+        #endif
 SWORD branchScore = 0;
-int dp = 9999;
+int shallowestTerminalDepth = 9999;
 
         constexpr Node()
           : moveHere(0)
@@ -93,7 +130,7 @@ int dp = 9999;
         constexpr Node(Node *newParent, Move move)
           : activeBranches(never_expanded),
             parent(newParent),
-            // Ownership is implicit (the 'owner' is the player who makes this move!):
+            // Ownership is implicit: the 'owner' is the player who makes this move!
             moveHere(move)
         {}
 
@@ -114,8 +151,8 @@ int dp = 9999;
                   UCBscore = other.UCBscore;
                 #endif
                 moveHere        = other.moveHere;
-                branchScore = other.branchScore;
-                dp = other.dp;
+            //    branchScore = other.branchScore;
+                shallowestTerminalDepth = other.shallowestTerminalDepth;
                 for (int i=0; i<other.createdBranches; ++i)
                     branches[i].parent = this;
             }
@@ -123,27 +160,75 @@ int dp = 9999;
         }
     };
 
-    static_assert(sizeof(Node) <= 64);
+    static_assert(sizeof(Node<SQWORD>) <= 64);
 
 
 /****************************************/
 /*                           Ai context */
 /****************************************/
-    template <int NumNodes, class IntType>
+    template <int NumNodes, GameMove MoveType, BitfieldIntType BitfieldType, class Pattern, int MaxPatterns>
     struct Ai_ctx
     {
         static constexpr int numNodes = NumNodes;
-        BitAlloc<NumNodes, IntType> bitalloc;
-        Node nodePool[NumNodes];
+        BitAlloc<NumNodes, BitfieldType> bitalloc;
+        Node<MoveType> nodePool[NumNodes];
+
+        static constexpr int maxPatterns = MaxPatterns;
+        int storedPatterns = 0;
+        Pattern patterns[maxPatterns];
+        float maxPatternSimilarity = 1.f;
 
         Ai_ctx() {}
         Ai_ctx(const Ai_ctx&) = delete;
         Ai_ctx& operator=(const Ai_ctx&) = delete;
+
+        template <Gameview Board>
+        void collectPattern(Board& current)
+        {
+            const Pattern *ptrInputs = current.getNextPattern();
+            while (ptrInputs != nullptr)
+            {
+                if (storedPatterns < maxPatterns)
+                {
+                    Pattern& target = patterns[storedPatterns];
+                    for (int i=0; i<target.patternSize; ++i)
+                        target.pattern[i] = ptrInputs->pattern[i];
+                    storedPatterns += 1;
+                }
+                else
+                {
+                    maxPatternSimilarity = diversify(patterns, *ptrInputs, maxPatterns);
+                }
+                ptrInputs = current.getNextPattern();
+            }
+        }
+
+        template <Gameview Board>
+        void train(Board& current)
+        {
+            const Pattern *ptrInputs = current.getNextPattern();
+            // todo
+        }
+
+        template <Gameview Board>
+        float query(Board& current) const
+        {
+            // todo
+            const float win  = 1;// inputs[0];
+            const float lose = 1; //-inputs[1];
+            return (win+lose) / 2.f;
+        }
     };
 
 
-    template <int NumNodes, typename IntType>
-    inline Node *disconnectBranch(Ai_ctx<NumNodes, IntType>& ai_ctx, Node *parent, const Node *removeMe)
+/****************************************/
+/*    Search tree node helper functions */
+/****************************************/
+    template <int NumNodes, GameMove MoveType, BitfieldIntType BitfieldType, class Pattern, int NumPatterns>
+    inline Node<MoveType> *disconnectBranch(Ai_ctx<NumNodes, MoveType, BitfieldType, Pattern, NumPatterns>& ai_ctx,
+                                            Node<MoveType> *parent,
+                                            const Node<MoveType> *removeMe
+                                           )
     {
         aiAssert(parent);
         aiAssert(parent->activeBranches > 0);
@@ -156,7 +241,7 @@ int dp = 9999;
 
 
         const auto posOfChild = removeMe - parent->branches;
-        Node& swapDst = parent->branches[posOfChild]; // Bypass the 'const'
+        Node<MoveType>& swapDst = parent->branches[posOfChild]; // Bypass the 'const'
 
         // Discard all child branches of each of the child nodes of the node
         // we want to remove (recursive):
@@ -175,12 +260,13 @@ int dp = 9999;
         //discard(ai_ctx, swapDst); // incorrect!! // todo test!!
 
 
-        const Move removedMoveHere = swapDst.moveHere;
-        const auto removedVisits   = swapDst.visits;
-        const auto removedScore    = swapDst.score;
-        const auto removedBranchScore = swapDst.branchScore;
+        const MoveType removedMoveHere = swapDst.moveHere;
+        const auto     removedVisits   = swapDst.visits;
+        const auto     removedScore    = swapDst.score;
+        const auto     removedBranchScore = swapDst.branchScore;
+        const auto    removedShallowestTerminalDepth = swapDst.shallowestTerminalDepth;
 
-        Node& swapSrc = parent->branches[parent->activeBranches-1];
+        Node<MoveType>& swapSrc = parent->branches[parent->activeBranches-1];
 
         // Don't swap w/ itself if the to-be-removed node is last:
         if (&swapDst == &parent->branches[parent->activeBranches-1])
@@ -198,7 +284,7 @@ int dp = 9999;
 
 
         swapDst.branchScore = swapSrc.branchScore;
-        swapDst.dp = swapSrc.dp;
+        swapDst.shallowestTerminalDepth = swapSrc.shallowestTerminalDepth;
 
 
         // Establish new "parent" for each branch node after swap
@@ -207,20 +293,20 @@ int dp = 9999;
         for (int i=0; i<swapDst.activeBranches; ++i)
             swapDst.branches[i].parent = &swapDst;
 
-     //   #if 0
-          // None of this is needed:
-          // // ^^ WRONG!!! ALL of thiis needed!!!!
-          swapSrc.activeBranches = Node::removed;
+        #ifdef INCLUDEAI__PREVENT_ROOTNODES_FROM_GETTING_UPDATED_CORRECTLY
+        #else
+          swapSrc.activeBranches = Node<MoveType>::removed;
           swapSrc.moveHere       = removedMoveHere;
           swapSrc.visits         = removedVisits;
           swapSrc.score          = removedScore;
           swapSrc.branches       = nullptr;
           swapSrc.branchScore = removedBranchScore;
+          swapSrc.shallowestTerminalDepth = removedShallowestTerminalDepth; // Important!
+        #endif
 
           //for (int i=0; i<swapSrc.createdBranches; ++i)
             //swapSrc.branches[i].parent = &swapSrc;
 
-       // #endif
 
         parent->activeBranches -= 1;
         aiAssert(swapSrc.parent == parent);
@@ -231,8 +317,8 @@ int dp = 9999;
 /****************************************/
 /*                               Memory */
 /****************************************/
-    template <typename Ctx, GameMove Move>
-    inline constexpr auto& insertNodeIntoPool(Ctx& ctx, const int pos, Node *node, Move move)
+    template <typename Ctx, GameMove MoveType>
+    inline constexpr auto& insertNodeIntoPool(Ctx& ctx, const int pos, Node<MoveType> *node, MoveType move)
     {
         aiAssert(pos < ctx.numNodes);
         return ctx.nodePool[pos] = Node(node, move);
@@ -241,8 +327,9 @@ int dp = 9999;
 
 /****************************************/
 /*                            Simulator */
+/* MaxRandSims should be '%3 != 0'      */
 /****************************************/
-    template <int MaxRandSims, Gameboard Board, typename Rndfunc>
+    template <int MaxRandSims, Gameview Board, typename Rndfunc>
     constexpr float simulate(const Board& original, Rndfunc rand)
     {
         int simWins = 0;
@@ -254,12 +341,12 @@ int dp = 9999;
             auto outcome = Outcome::running;
             do
             {
-                typename Board::AvailMoves availMoves;
-                const int nAvailMovesForThisTurn = boardSim.generateMovesAndGetCnt(availMoves);
+                typename Board::StorageForMoves storageForMoves;
+                const int nAvailMovesForThisTurn = boardSim.generateMovesAndGetCnt(storageForMoves);
                 if (nAvailMovesForThisTurn == 0)
                     break;
                 const int idx = rand() % nAvailMovesForThisTurn;
-                outcome = boardSim.doMove( availMoves[idx] );
+                outcome = boardSim.doMove( storageForMoves[idx] );
                 boardSim.switchPlayer();
             } while (outcome==Outcome::running);
             // Count winner/loser:
@@ -277,113 +364,157 @@ int dp = 9999;
 
 /****************************************/
 /*                              Minimax */
-/* Both "undeterminable" and            */
-/* "indeterminable" are correct and can */
-/* be used interchangeably in many      */
-/* contexts. However, "indeterminable"  */
-/* is more commonly used in formal or   */
-/* academic writing.                    */
-/* (https://chatgptfree.ai/)            */
 /****************************************/
-    inline constexpr SWORD indeterminable = -9998;
-    static_assert((indeterminable&1) == 0);
+    constexpr SWORD MinimaxWin              =   1;
+    constexpr SWORD MinimaxDraw             =   0;
+    constexpr SWORD MinimaxLose             =  -1;
+    constexpr SWORD MinimaxInit             =  -2;
+    // Both "undeterminable" and "indeterminable" are correct and can be used interchangeably in many
+    // contexts. However, "indeterminable" is more commonly used in formal or academic writing. (chatgpt)
+    constexpr SWORD MinimaxIndeterminable99 = -99; // Debug
+    constexpr SWORD MinimaxIndeterminable   =   0;
 
-    template <Gameboard Board>
-    constexpr SWORD minimax(const Board& current, const Move mv, const int depth)
+    template <Gameview Board, GameMove MoveType>
+    constexpr SWORD minimax(const Board& current, const MoveType move, SWORD alpha, SWORD beta, const int depth)
     {
-        if (depth==0)
-            return indeterminable;
+        if (depth==0) { return MinimaxIndeterminable; }
 
         Board clone = current.clone();
         clone.switchPlayer();
-        const Outcome outcome = clone.doMove(mv);
+        const Outcome outcome = clone.doMove(move);
         if (outcome != Outcome::running)
         {
             if (outcome == Outcome::draw)
-                return 0;
+                return MinimaxDraw;
             else if (clone.getWinner() != current.getCurrentPlayer())
-                return -1;
+                return MinimaxLose;
             else
-                return 1;
+                return MinimaxWin;
         }
-        typename Board::AvailMoves availMoves;
-        int nMoves = clone.generateMovesAndGetCnt(availMoves);
+        typename Board::StorageForMoves storageForMoves;
+        int nMoves = clone.generateMovesAndGetCnt(storageForMoves);
         nMoves -= 1;
-        int minimaxScore = -2;
+        SWORD minimaxScore = MinimaxInit;
         while (nMoves >= 0)
         {
-            const Move moveHere = availMoves[nMoves];
-            const int mnx = -minimax(clone, moveHere, depth-1);
-            if (mnx>minimaxScore)
-                minimaxScore = mnx;
+            const MoveType moveHere = storageForMoves[nMoves];
+            const SWORD mnx = -minimax(clone, moveHere, -beta, -alpha, depth-1);
+            minimaxScore = aiMax(minimaxScore, mnx);
+            alpha        = aiMax(alpha, mnx);
+            // Alpha-Beta Pruning (Thank you AI!!!!):
+            if (beta <= alpha) {
+                break; // Cut off the search
+            }
             nMoves -= 1;
         }
-        return minimaxScore==-2 ? 0 : minimaxScore;
+        return minimaxScore==MinimaxInit ? MinimaxDraw : minimaxScore;
     }
 
-    template <Gameboard Board>
+    template <Gameview Board, GameMove MoveType>
     inline constexpr SWORD minimax(const Board& current, const int MaxDepth)
     {
         Board clone = current.clone();
         clone.switchPlayer();
-        typename Board::AvailMoves availMoves;
-        int nMoves = clone.generateMovesAndGetCnt(availMoves);
+        typename Board::StorageForMoves storageForMoves;
+        int nMoves = clone.generateMovesAndGetCnt(storageForMoves);
         nMoves -= 1;
-        SWORD best = -2;
+        SWORD best = MinimaxInit;
         while (nMoves >= 0)
         {
-            const Move moveHere = availMoves[nMoves];
-            const int mnx = -minimax(clone, moveHere, MaxDepth);
-            if (mnx>best)
+            const MoveType moveHere = storageForMoves[nMoves];
+            const SWORD mnx = -minimax(clone, moveHere, MinimaxLose-1, MinimaxWin+1, MaxDepth);
+            if (mnx > best)
                 best = mnx;
             nMoves -= 1;
         }
-        return best==-2 ? 0 : best;
+        return best==MinimaxInit ? MinimaxDraw : best;
     }
-
-
-/****************************************/
-/*                     Save the planet!!*/
-/* Reuse existing search-tree!          */
-/****************************************/
-   // void activateBranch(Node *root)
-    //{
-        // wasm prohibits tail-call opt.:
-        // https://github.com/WebAssembly/tail-call/blob/master/proposals/tail-call/Overview.md
-    //}
 
 
 /****************************************/
 /*                               result */
 /****************************************/
+    template <GameMove MoveType>
+    struct MCTS_result
+    {
+        enum { simulations, minimaxes, maxPatternSimilarity, end };
+        int statistics[end] = {0};
+        MoveType best;
+    };
 
+    template <GameMove MoveType>
+    class MCTS_Future
+    {
+    public:
+        bool have_result() const
+        {
+            return false;
+        }
+
+        MoveType getResult() const
+        {
+        }
+    };
 
 
 /****************************************/
 /*                                 mcts */
 /****************************************/
-    template <int NumNodes, int MaxIterations, int SimDepth, int MinimaxDepth, std::integral IntType, Gameboard Board, typename Rndfunc>
-    constexpr auto mcts(const Board& boardOriginal, Ai_ctx<NumNodes, IntType>& ai_ctx, Rndfunc rand)
+    template <int MaxIterations,
+              int SimDepth,
+              int MinimaxDepth,
+              GameMove MoveType,
+              BitfieldIntType BitfieldType,
+              Gameview Board,
+              typename AiCtx,
+              typename Rndfunc
+             >
+    constexpr MCTS_result<MoveType> mcts(const Board& boardOriginal, AiCtx& ai_ctx, Rndfunc rand)
     {
         [[maybe_unused]] auto UCBselectBranch =
-            [](const Node& node) -> Node *
+            [](const Node<MoveType>& node) -> Node<MoveType> *
             {
                 for (int i=0; i<node.activeBranches; ++i)
                 {
                     aiAssert(node.branches);
-                    Node& arm = node.branches[i];
+                    Node<MoveType>& arm = node.branches[i];
                     if (arm.visits == 1)
                     {
                         // UCB requires each slot-machine 'arm' to be tried at least once (https://u.cs.biu.ac.il/~sarit/advai2018/MCTS.pdf):
                         return &arm; // Prevent x/0
                     }
-
+                    
                     // todo: epl/expl shld be adjusted to utilize max node use: check rate of node use vs nodes released and adjust based on that!
-                    const float exploit = arm.score / (arm.visits-0.f);
-                    constexpr float exploration_C = 1.21f;
-                    constexpr float some_multiplier = 2.f; // (http://www.incompleteideas.net/609%20dropbox/other%20readings%20and%20resources/MCTS-survey.pdf)
-                    const float explore = exploration_C * aiSqrt((some_multiplier * aiLog(node.visits)) / arm.visits);
-                    arm.UCBscore = exploit + explore; // <- 'Promising' meaning "good information" not "winning"!
+                    // todo2: score prefer if > 0?? (same like at the end????)
+                    const float exploit = arm.score / (arm.visits-0.f); // <- This
+                    #if 0
+                      const float exploit = std::abs(arm.score) / (arm.visits-0.f); // <- Not this
+                    #endif
+                    constexpr float exploration_C = 1.618f * 2; // useless?
+                    constexpr float Hoeffdings_multiplier = 1.f; //2.f; // (http://www.incompleteideas.net/609%20dropbox/other%20readings%20and%20resources/MCTS-survey.pdf)
+                    const float explore = exploration_C * aiSqrt((Hoeffdings_multiplier * aiLog(node.visits)) / arm.visits);
+                    /*
+
+                        def Q(self):  # returns float
+        return self.total_value / (1 + self.number_visits)
+
+    def U(self):  # returns float
+        return (math.sqrt(self.parent.number_visits)
+                * self.prior / (1 + self.number_visits))
+
+    def best_child(self, C):
+        return max(self.children.values(),
+                   key=lambda node: node.Q() + C*node.U())
+
+                    */
+                    arm.UCBscore = exploit + explore;
+                    #ifdef INCLUDEAI__FORCE_REVISIT_IDENTICAL_SCORE
+                      for (int j=0; j<node.activeBranches; ++j)
+                      {
+                        if (&node.branches[j]!=&arm && node.branches[j].UCBscore==arm.UCBscore && node.branches[j].visits==arm.visits)
+                            return &arm;
+                      }
+                    #endif
                 }
                 int pos = node.activeBranches - 1;
                 float best = node.branches[pos].UCBscore;
@@ -399,11 +530,11 @@ int dp = 9999;
             };
 
         [[maybe_unused]] auto pickUnexplored =
-            [](const Node& node) -> Node *
+            [](const Node<MoveType>& node) -> Node<MoveType> *
             {
                 for (int i=0; i<node.activeBranches; ++i)
                 {
-                    Node& branch = node.branches[i];
+                    Node<MoveType>& branch = node.branches[i];
                     if (branch.visits == 0)
                         return &branch;
                 }
@@ -411,25 +542,29 @@ int dp = 9999;
             };
 
         [[maybe_unused]] auto pickRandom =
-            [](const Node& node) -> Node *
+            [](const Node<MoveType>& node) -> Node<MoveType> *
             {
-                return nullptr;
+                return nullptr; // todo!!
             };
 
-        Node *root = &insertNodeIntoPool(ai_ctx, 0, nullptr, Move{0});
+
+        Node<MoveType> *placeholder = nullptr; // Prevent gcc from deducting the wrong type... 🙄
+        Node<MoveType> *root = &insertNodeIntoPool(ai_ctx, 0, placeholder, MoveType{});
         ai_ctx.bitalloc.clearAll();
         [[maybe_unused]] const auto throwaway = ai_ctx.bitalloc.largestAvailChunk(1);
-        //for (int i=0; i<NumNodes; ++i)
+        for (int i=0; i<AiCtx::numNodes; ++i)
         {
-            //   ai_ctx.nodePool[i].activeBranches = -1;
-            //   ai_ctx.nodePool[i].createdBranches = 0;
+            ai_ctx.nodePool[i].activeBranches = -1;
+            ai_ctx.nodePool[i].createdBranches = 0;
         }
 
         int cutoffDepth = 9999;
+        FLOAT threshold = 1.f; // 'threshold' above which the result of the neuralnet is used, not minimax or randroll
         SWORD rootMovesRemaining;
+        MCTS_result<MoveType> mcts_result;
         for (int iterations=0; root->activeBranches!=0 && iterations<MaxIterations; ++iterations)
         {
-            Node *selectedNode = root;
+            Node<MoveType> *selectedNode = root;
             Board boardClone = boardOriginal.clone();
             Outcome outcome = Outcome::running;
             int depth = 1;
@@ -438,7 +573,7 @@ int dp = 9999;
 
 
             // 1. Traverse tree and select leaf:
-            Node *parentOfSelected;
+            Node<MoveType> *parentOfSelected;
             while ((selectedNode->activeBranches > 0) && (rootMovesRemaining == 0))
             {
                 parentOfSelected = selectedNode;
@@ -446,7 +581,7 @@ int dp = 9999;
                 selectedNode = UCBselectBranch(*selectedNode);
                 //aiAssert(selectedNode->branchScore == 0);
                 aiAssert(selectedNode->parent == parentOfSelected);
-                const Move moveHere = selectedNode->moveHere;
+                const MoveType moveHere = selectedNode->moveHere;
                 outcome = boardClone.doMove(moveHere);
                 boardClone.switchPlayer();
                 depth += 1;
@@ -476,13 +611,19 @@ int dp = 9999;
 
 
             // 2. Add (allocate/expand) branch/child nodes to leaf:
-            if (selectedNode->activeBranches==Node::never_expanded && outcome==Outcome::running)
+            if (selectedNode->activeBranches==Node<MoveType>::never_expanded && outcome==Outcome::running)
             {
-                typename Board::AvailMoves availMoves;
-                int nValidMoves = boardClone.generateMovesAndGetCnt(availMoves);
+                typename Board::StorageForMoves storageForMoves;
+                int nValidMoves = boardClone.generateMovesAndGetCnt(storageForMoves);
                 const auto availNodes = ai_ctx.bitalloc.largestAvailChunk(nValidMoves);
-                nValidMoves = availNodes.len; // This line is critical!
+                nValidMoves = availNodes.length; // This line is critical!
                 int nodePos = availNodes.posOfAvailChunk;
+                if (nodePos == -1) [[unlikely]]
+                {
+                    // No more nodes available, stopping condition!
+                    // todo: record this in the result!
+                    break;
+                }
                 if (selectedNode == root)
                     rootMovesRemaining = nValidMoves;
 
@@ -490,6 +631,7 @@ int dp = 9999;
 
                 if ((nodePos+nValidMoves) >= ai_ctx.numNodes) [[unlikely]] // This can happen at the end
                 {
+                    // todo: out of mem is stopping condition!
                     std::printf("\033[1;35mexceeded! %d vs  %d \n\033[0m", ai_ctx.numNodes, nodePos+nValidMoves);
                     // Can't be salvaged. Once we are out of nodes we can't release already
                     // alloc'd branches (cuz we must reach a terminal node for that). We are stuck:
@@ -498,16 +640,10 @@ int dp = 9999;
                     //nValidMoves = nValidMoves - ((nodePos+nValidMoves)-nValidMoves);
                     //nValidMoves -= 1;
                 }
-                if (nValidMoves == 0) [[unlikely]]
-                {
-                    std::printf("\033[1;35m................npos %d mves %d iii: %d \n\033[0m", nodePos, nValidMoves, iterations);
-                    // todo: flag!
-                    //iterations = MaxIterations;
-                    // not enough nodes!!
 
-                    aiAssert(false); // outcome is 'running' but should be 'draw'!!!
-                    break; // Top loop!
-                }
+                // If this gets triggered there is a bug in the game. There can NEVER
+                // be a situation where a player can't move but game is still running!!!!:
+                aiAssert(nValidMoves > 0); // In one example checking for draw condition was missing, leading to this getting triggered...
 
                 //aiAssert((nodePos+nValidMoves) >= 0); &&
                 //aiAssert((nodePos+nValidMoves) <= ai_ctx.numNodes);
@@ -517,32 +653,27 @@ int dp = 9999;
                 selectedNode->createdBranches = nValidMoves;
                 nValidMoves -= 1;
 
-                if (ai_ctx.nodePool[nodePos].activeBranches > 0){
-                    std::printf("\033[1;31mIN USE! %d \033[0m\n", ai_ctx.nodePool[nodePos].activeBranches);
-                }
-                Move move = availMoves[nValidMoves];
+                aiAssert(ai_ctx.nodePool[nodePos].activeBranches <= 0);
+                MoveType move = storageForMoves[nValidMoves];
                 selectedNode->branches = &insertNodeIntoPool(ai_ctx, nodePos, selectedNode, move);
 
 
                 while (nValidMoves--)
                 {
                     nodePos += 1;
-                    move = availMoves[nValidMoves];
+                    move = storageForMoves[nValidMoves];
                     [[maybe_unused]] const auto& unusedNode =
                         insertNodeIntoPool(ai_ctx, nodePos, selectedNode, move);
                 }
-                std::printf("\033[1;37mnew branch:%p brch:%p \n", selectedNode-ai_ctx.nodePool, (&selectedNode->branches[0])-ai_ctx.nodePool);
+                std::printf("\033[1;37mnew branch:%p brch:%p \033[0m \n", selectedNode-ai_ctx.nodePool, (&selectedNode->branches[0])-ai_ctx.nodePool);
                 for (int i=0; false && i<selectedNode->createdBranches; ++i) // todo put this loop into the assert
                 {
-                    std::printf("\033[1;36m%p (%d) exp:%d mv:%d \n", (&selectedNode->branches[i])-ai_ctx.nodePool, selectedNode->branches[i].moveHere, 0, selectedNode->branches[i].moveHere);
-                    //  std::printf("mvs: %d, avllen: %d, POS: %d, npos: %d \n", nValidMoves, availNodes.len, availNodes.posOfAvailChunk, nodePos);
+                    std::printf("\033[1;36m%p (%d) exp:%d mv:%d \033[0m \n", (&selectedNode->branches[i])-ai_ctx.nodePool, selectedNode->branches[i].moveHere, 0, selectedNode->branches[i].moveHere);
                     aiAssert(selectedNode != &selectedNode->branches[i]);
                     aiAssert(selectedNode->branches && selectedNode->activeBranches>0);
                     aiAssert(selectedNode->branches[i].parent == selectedNode);
                 }
-                std::printf("\033[0m\n");
             }
-
 
 
 
@@ -556,6 +687,10 @@ int dp = 9999;
                 selectedNode = &root->branches[rootMovesRemaining];
                 outcome = boardClone.doMove( selectedNode->moveHere );
                 boardClone.switchPlayer();
+                if (selectedNode->moveHere == 59)
+                {
+                    std::printf("root move: %d \n", selectedNode->moveHere);
+                }
             }
             // 3b. Pick (select) a node for analysis:
             else if (selectedNode->activeBranches > 0)
@@ -595,69 +730,67 @@ int dp = 9999;
 
 
             // 4. Determine branch score ("rollout"):
-            SWORD branchscore = 0;
             bool disconnect = false;
             if (outcome != Outcome::fin) // <- This one
-            #if 0
+            #if INCLUDEAI__BRANCH_ON_WRONG_TERMINAL_CONDITION
               if (outcome == Outcome::running) // <- Not this
             #endif
             {
-                // This one:
-                const SWORD polarity = boardClone.getCurrentPlayer()!=boardOriginal.getCurrentPlayer() ? -1 : 1;
-                #if 0
-                  // Not this:
+                #ifndef INCLUDEAI__CONFUSE_CURRENT_PLAYER_WITH_WINNER
+                  // correct:
+                  const SWORD polarity = boardClone.getCurrentPlayer()!=boardOriginal.getCurrentPlayer() ? -1 : 1;
+                #else
+                  // incorrect:
                   const SWORD polarity = boardClone.getWinner()!=boardOriginal.getCurrentPlayer() ? -1 : 1;
                 #endif
-                branchscore = minimax(boardClone, MinimaxDepth);
-                if ((branchscore&1) == 0)
+
+                const FLOAT neuroscore = ai_ctx.query(boardClone);
+                //if (true && aiAbs(neuroscore) < threshold) // todo!
                 {
-                    branchscore = 0;
-                    // Simulate to get an estimation of the quality of this position:
-                    score = simulate<SimDepth>(boardClone, rand);
-                    score *= polarity-0.f;
+                    const SWORD branchscore = minimax<Board, MoveType>(boardClone, MinimaxDepth) * polarity;
+                    aiAssert(-abs(branchscore) != MinimaxIndeterminable99);
+                    if (branchscore == MinimaxIndeterminable)
+                    {
+                        // Simulate to get an estimation of the quality of this position:
+                        score = simulate<SimDepth>(boardClone, rand);
+                        score *= polarity-0.f;
+                        mcts_result.statistics[MCTS_result<MoveType>::simulations] += 1;
+                    }
+                    else
+                    {
+                        score = branchscore-0.f;
+                        const bool sameSign = (score * neuroscore) > 0;
+                        if (sameSign)
+                            threshold = aiMin(neuroscore, threshold);
+                        #ifdef INCLUDEAI__INSTANT_LOBOTOMY
+                          disconnect = true;
+                        #endif
+                        mcts_result.statistics[MCTS_result<MoveType>::minimaxes] += 1;
+                    }
                 }
-                else
+                //else
                 {
-                    score = branchscore-0.f;
-                    score *= polarity-0.f;
-                    branchscore *= polarity;
-                    disconnect = true;
+                  //  score = neuroscore * (polarity-0.f);
                 }
-
-                //score += 2.f;//todo test!
-
-
-                // todo: flag avg sim score for this turn
             }
             else
             {
                 cutoffDepth = cutoffDepth < depth ? cutoffDepth : depth;
-                selectedNode->dp = depth<selectedNode->dp ? depth : selectedNode->dp;
+                selectedNode->shallowestTerminalDepth = depth<selectedNode->shallowestTerminalDepth ? depth : selectedNode->shallowestTerminalDepth;
 
                 // A terminal node is equivalent to a 100% simulation score:
-                if (outcome == Outcome::draw)
+                if (outcome != Outcome::draw)
                 {
-                    // Nothing?
+                    constexpr float win = 1.f, lose = -1.f;
+                    #ifndef INCLUDEAI__CONFUSE_LAST_PLAYER_WITH_WINNER
+                      // This one:
+                      score = boardOriginal.getCurrentPlayer() == boardClone.getWinner() ? win : lose;
+                    #else
+                      // Not this:
+                      score = boardOriginal.getCurrentPlayer() != boardClone.getCurrentPlayer() ? win : lose;
+                    #endif
                 }
-                // '!=' if "boardClone.getCurrentPlayer()" and '==' if "boardClone.getWinner()":
-                else if (boardOriginal.getCurrentPlayer() == boardClone.getWinner())
-                {
-                    // win:
-                    score = 1.f;
-                    //score = boardClone->getCurrentPlayer() == boardOriginal->getCurrentPlayer() ? -1 : 1;
-                   branchscore = 1;
-                }
-                else
-                {
-                    // lose:
-                    score = -1.f;
-                    //score = boardClone->getCurrentPlayer() == boardOriginal->getCurrentPlayer() ? 1 : -1;
-
-                  branchscore = -1;
-                }
-
                 disconnect = true;
-
             }
 
 
@@ -665,8 +798,8 @@ int dp = 9999;
             {
 
 
-                Node *child = selectedNode;
-                Node *parent = selectedNode->parent;
+                Node<MoveType> *child = selectedNode;
+                Node<MoveType> *parent = selectedNode->parent;
                 aiAssert(parent);
                 aiAssert(selectedNode != root);                  // Ensure 'selectedNode' not root
                 //aiAssert([&]{ return outcome==Board::Outcome::running ? parent->branches!=nullptr : true; }());
@@ -687,8 +820,11 @@ int dp = 9999;
                     std::printf("%d \n", parent->activeBranches);
 
 
-                    // todo: reassign wont branch up!!! (bug!!)
+                    Node<MoveType> *todo = selectedNode->parent;
                     selectedNode = disconnectBranch(ai_ctx, parent, child);
+                    aiAssert(selectedNode->parent == parent);
+                    //aiAssert(todo == selectedNode->parent); // 100% fail!!!
+                    //selectedNode->parent = todo; // fix this goes in  disconnectBranch()
 
 
 
@@ -699,30 +835,8 @@ int dp = 9999;
                     }
                     else
                     {
-                        //__builtin_trap();
+                        //__builtin_trap(); // todo remove
 
-                        // Apply minimax:
-                        // We can still use minimax even if we haven't seen all moves on a node if they were
-                        // not all created during step 2 (allocate). Still better than nothing...
-                        /*Node *bla = parent; //child;
-
-                        //while (bla && bla->activeBranches==0)
-                        //if (bla->activeBranches<=0)
-
-
-
-                        {
-                        a(*bla);
-                        mize tmp = a;
-                        a = b;
-                        b = tmp;
-
-                        //bla->score += 10000.f * bla->mnx;
-
-                        printf("\033[1;34m val %d \033[0m] ", bla->mnx);
-                        bla = bla->parent;
-                        }
-                        */
                         child = parent;
                         aiAssert(parent != parent->parent);
                         parent = parent->parent; // Lolz
@@ -730,46 +844,42 @@ int dp = 9999;
                 }
             }
 
+            // Floyd's Cycle. Ensure the graph remains acyclic (debug only!):
+            #if defined(AI_DEBUG)
+              aiAssert([selectedNode]
+                       {
+                           Node<MoveType> *fast = selectedNode;
+                           Node<MoveType> *slow = selectedNode;
+                           while (fast)
+                           {
+                               if (fast)
+                               fast = fast->parent;
+                               if (fast == slow)
+                               {
+                                   fast = nullptr; // 'break'
+                                   return false;
+                               }
+                               if (fast)
+                               fast = fast->parent;
+                               slow = slow->parent;
+                           }
+                           return true;
+                       }()
+                      );
+            #endif
+
+
+
 
 
 
             // 5. Backprop/update tree:
-            aiAssert([selectedNode]
-                     {
-                         // Floyd's Cycle
-                         Node *fast = selectedNode;
-                         Node *slow = selectedNode;
-                         while (fast)
-                         {
-                             if (fast)
-                             fast = fast->parent;
-                             if (fast == slow)
-                             {
-                                 fast = nullptr; // 'break'
-                                 return false;
-                             }
-                             if (fast)
-                             fast = fast->parent;
-                             slow = slow->parent;
-                         }
-                         return true;
-                     }()
-                    );
-
-            float cur = 1.f;
-            //int yyy = fib(depth);
-
-            SWORD depthScore = 1;
-           // for (Node *tmp=selectedNode; tmp; ) { tmp=tmp->parent; branchDepth+=1; cur=cur+0.002f; }
-            std::printf("scre sel:%p score: %1.3f %d max:%d \n", selectedNode-ai_ctx.nodePool, score, iterations, MaxIterations);
-
-            int child_dp = 9999;
-
+            int child_dpt = 9999;
             while (selectedNode != root)
             {
-                int dp_temp = selectedNode->dp;
-                selectedNode->dp = child_dp<dp_temp ? child_dp : dp_temp;
-                child_dp = dp_temp;
+                int dpt_temp = selectedNode->shallowestTerminalDepth;
+                selectedNode->shallowestTerminalDepth = child_dpt<dpt_temp ? child_dpt : dpt_temp;
+                child_dpt = dpt_temp;
 
                 //selectedNode->visits += 1.f ;//- ((cur-0.f)/(depth-0.f)); // Games that have more than two possible outcomes (example:
                 //selectedNode->visits += aiLog( 100 * ((cur-0.f)/(depth-0.f)) );
@@ -779,13 +889,11 @@ int dp = 9999;
                 //if ([&]{ if constexpr ((cutoff_scoring&hyperparams)==cutoff_scoring) return branchDepth<cutoff; else return true; }())
                 //if (depth <= cutoffDepth)
                 {
-                    selectedNode->visits += 1;
-                    //selectedNode->visits += 1.f ;/// (depth-0.f);
-                    // 'score' does not tell us if a position is a winner or not. It tells us
+                    // 'visits' does not tell us if a position is a winner or not. It tells us
                     // how -interesting- a position is:
+                    selectedNode->visits += 1;
                     selectedNode->score += score;
-                    selectedNode->branchScore += branchscore;
-                    depthScore += 1;
+                    
                     //depth += 1;
                     //selectedNode->weight += 1; //(fib(cur)-0.f) / (fib(depth)-0.f); //(aiLog(cur* 10)/2) / (depth-0.f); //((cur-0.f)/(depth-0.f)) ; weight
                 //    cur += 1.f;
@@ -805,77 +913,139 @@ int dp = 9999;
             }
         } // iterations
 
-
-
-
-
-
-
-
-
-
-
-        // Finally, pick the branch with the best score:
-        auto bestVisits = root->branches[0].visits;
-      //  auto best = root->branches[0].visits / root->branches[0].score;
-        auto bestScore = root->branches[0].score;
-        int posVisits=0, posScore=0;
+        
+        // This is the part NOT discussed in the AlphaZero paper (or ANY mcts paper for that matter):
+        // What to do when terminal and non-terminal nodes appear in the tree mixed together????
+        int shallowestTerminal = 9999;
         for (int i=0; i<root->createdBranches; ++i)
         {
-            // Add minimax score to final result:
-            //if (root->branches[i].mnx == -1)
-            //    root->branches[i].visits -= 10000;
-            //else if (root->branches[i].mnx == 1)
-            //     root->branches[i].visits += 10000;
+            Node<MoveType>& branch = root->branches[i];
+            if (branch.shallowestTerminalDepth < shallowestTerminal)
+                shallowestTerminal = branch.shallowestTerminalDepth;
+        }
 
-
-
-            //  if constexpr ((count_visits_only&hyperparams)==count_visits_only)
-            auto    expectedVisits = root->branches[i].visits;
-            // else
-            auto    expectedScore = root->branches[i].score;
-          //  if (root->branches[i].score <0.001f)
-            //    expected = 0;
-            //if (expected < 0.001f)
-
-
-
-            if (expectedVisits>bestVisits)// && root->branches[i].parent)
+        if (shallowestTerminal != 9999)
+        {
+            for (int i=0; i < root->createdBranches; ++i)
             {
-                bestVisits = expectedVisits;
-                posVisits = i;
+                Node<MoveType>& branch = root->branches[i];
+                if (branch.shallowestTerminalDepth == shallowestTerminal)
+                {
+                    if (branch.score > 0.f)
+                        continue;
+                }
+                else 
+                {
+                    branch.score = -1000.f; // -iters! Todo!!
+                }
             }
-            if (expectedScore>bestScore)// && root->branches[i].parent)
+        } // (shallowestTerminal != 9999)
+
+        // Yes, scoring is complex!!!:
+        auto bestScore = root->branches[0].score;
+        auto bestVisits = root->branches[0].visits;
+        int posScore=0, posVisits=0;
+        for (int i=1; i<root->createdBranches; ++i)
+        {
+            auto expectedScore = root->branches[i].score;
+            auto expectedVisits = root->branches[i].visits;
+            if (expectedScore > bestScore)
             {
                 bestScore = expectedScore;
                 posScore = i;
             }
+            else if (expectedScore == bestScore)
+            {
+                if (expectedVisits > root->branches[posScore].visits)
+                    posScore = i;
+            }
+    
+            if (expectedVisits > bestVisits)
+            {
+                bestVisits = expectedVisits;
+                posVisits = i;
+            }
+            else if (expectedVisits == bestVisits)
+            {
+                if (expectedScore > root->branches[posVisits].score)
+                    posVisits = i;
+            }
         }
 
-        for (int i=0; i<root->createdBranches; ++i)
-        {
 
-            if (i==posScore) std::printf("\033[1;31m");
-            if (i==posVisits) std::printf("\033[1;36m");
-            std::printf("mv: %d bs:%d   ", root->branches[i].moveHere, root->branches[i].branchScore);
-            std::printf("s:%4.1f v:%d       dp: %d       act:%d  s/v:%2.3f v/s:%2.5f \033[0m \n", root->branches[i].score, root->branches[i].visits, root->branches[i].dp, root->branches[i].activeBranches,
-                root->branches[i].score/ root->branches[i].visits,root->branches[i].visits/root->branches[i].score);
+
+
+
+
+
+
+
+            unsigned char yavpos[11*11] =
+                    {0, 0,  0,  0,  0,  0,  0,  0,  0,  0, 0,
+                     0, 0,  0,  0,  0, 'a','b','c','d','e',0,
+                     0, 0,  0,  0, 'f','g','h','i','j','k',0,
+                     0, 0,  0, 'l','m','n','o','p','q','r',0,
+                     0, 0, 's','t','u','v','w','x','y','z',0,
+                     0,'A','B','C','D','E','F','G','H','I',0,
+                     0,'J','K','L','M','N','O','P','Q', 0, 0,
+                     0,'R','S','T','U','V','W','X', 0,  0, 0,
+                     0,'Y','Z','1','2','3','4', 0,  0,  0, 0,
+                     0,'5','6','7','8','9', 0,  0,  0,  0, 0,
+                     0, 0,  0,  0,  0,  0,  0,  0,  0,  0, 0
+                    };
+
+
+
+            for (int i=0; i<root->createdBranches; ++i)
+            {
+    
+                if (i==bestScore) std::printf("\033[1;36m");
+                std::printf("mv: %c %d  bs:%d   ", yavpos[root->branches[i].moveHere], root->branches[i].moveHere
+                           , root->branches[i].branchScore);
+                std::printf("s:%4.3f v:%d  dp: %d   act:%d  s/v:%2.3f v/s:%2.5f \033[0m \n", root->branches[i].score, root->branches[i].visits, root->branches[i].shallowestTerminalDepth, root->branches[i].activeBranches,
+                    root->branches[i].score/ root->branches[i].visits,root->branches[i].visits/root->branches[i].score);
+            }
+            std::printf("threshold: %f mv: %d \033[1;31mcutoff: %d\033[0m ACT:%d maxPatternsim %f \n",
+                          threshold, root->branches[posScore].moveHere, cutoffDepth, root->activeBranches, ai_ctx.maxPatternSimilarity);
+    
+            mcts_result.statistics[MCTS_result<MoveType>::maxPatternSimilarity] = ai_ctx.maxPatternSimilarity*100;
+            mcts_result.best = [root, posVisits, posScore, bestScore]
+                               {
+                                   if (bestScore > 0.f)
+                                       return root->branches[posScore].moveHere;
+                                   return root->branches[posVisits].moveHere;
+                               }();
+            return mcts_result;
+
+    }
+
+    template <int MaxIterations,
+              int SimDepth,
+              int MinimaxDepth,
+              GameMove MoveType,
+              BitfieldIntType BitfieldType,
+              Gameview Board,
+              typename AiCtx,
+              typename Rndfunc
+             >
+    MCTS_Future<MoveType> mcts_async(const Board& boardOriginal, AiCtx& ai_ctx, Rndfunc rand)
+    {
+        // https://github.com/cdwfs/cds_sync/blob/master/cds_sync.h
+        using atomic = int;
+        static atomic rootMovesRemaining;
+        if (rootMovesRemaining == 0)
+        {
+            typename Board::StorageForMoves storageForMoves;
+            Board boardClone = boardOriginal.clone();
+            rootMovesRemaining = boardClone.generateMovesAndGetCnt(storageForMoves);
         }
-        std::printf(", gap: %f mv: %d \033[1;31mcutoff: %d\033[0m ACT:%d \n",  0, root->branches[posVisits].moveHere, cutoffDepth, root->activeBranches);
-
-        struct MCTS_result
+        while (rootMovesRemaining)
         {
-            enum {chunk_overflow,end};
-            int errors[end] = {0};
-            Move move;
-        };
-        return MCTS_result{ .move = [root, posVisits, posScore, bestScore]
-                                    {
-                                        if (bestScore > 0.f)
-                                            return root->branches[posScore].moveHere;
-                                        return root->branches[posVisits].moveHere;
-                                    }()
-                          };
+            typename Board::StorageForMoves storageForMoves;
+            Board boardClone = boardOriginal.clone();
+          //  ??? = boardClone.generateMovesAndGetCnt(storageForMoves);
+            // rootMovesRemaining -= 1;
+        }
     }
 
 } // namespace include_ai
@@ -884,20 +1054,3 @@ int dp = 9999;
 #else // AI_HPP
   #error "double include"
 #endif // AI_HPP
-
-
-
-
-
-
-
-
-/****************************************/
-/*                             Research */
-/****************************************/
-/*
-    https://u.cs.biu.ac.il/~sarit/advai2018/MCTS.pdf
-
-
-    todo: http://www.incompleteideas.net/609%20dropbox/other%20readings%20and%20resources/MCTS-survey.pdf
-*/

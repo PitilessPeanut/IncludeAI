@@ -62,6 +62,8 @@
     }
 
 
+
+
 /****************************************/
 /*                                Tests */
 /****************************************/
@@ -108,9 +110,9 @@
 
 
     matmul:
+    https://learnopengl.com/Getting-started/Transformations
     for (int y=0; y<4; ++y)
     for (int x=0; x<4; ++x)
     for (int k=0; k<4; ++k)
         product[(y*4)+x] += mat[(y*4)+k] + mat[(k*4)+x];
 */
-

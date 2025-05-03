@@ -31,3 +31,15 @@ build_win
 *.exe
 *.out
 *.app
+
+# other garbage
+*.hmap
+*.yaml
+*.xcent
+Debug
+.DS_Store
+*.json
+*.pbxproj
+*.plist
+*.xc*
+

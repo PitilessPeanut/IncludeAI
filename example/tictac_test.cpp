@@ -1,8 +1,9 @@
-#include "../src/ai.hpp"
-#include "../src/micro_math.hpp" // pcg
 #include <cstdio>
+#define INCLUDEAI_IMPLEMENTATION
+#define AI_DEBUG
+#include "../includeai.hpp"
 #include <vector>
-#include <assert.h>
+
 
 using namespace include_ai;
 
@@ -20,7 +21,7 @@ class TicTacBoard
 {
 public:
     using Move = int;
-    using AvailMoves = Move[9];
+    using StorageForMoves = Move[9];
     unsigned char pos[9+1] = {0,0,0,
                               0,0,0,
                               0,0,0
@@ -35,9 +36,8 @@ public:
     constexpr TicTacBoard clone() const
     {
         TicTacBoard dst;
-       	for (int i=0; i<9; ++i)
-   	        dst.pos[i] = pos[i];
-       	dst.currentPlayer = currentPlayer;
+        for (int i=0; i<9; ++i) { dst.pos[i] = pos[i]; }
+        dst.currentPlayer = currentPlayer;
         dst.turn = turn;
         return dst;
     }
@@ -116,105 +116,24 @@ struct TicTacPlayer : TicTacPlayerBase
 
 struct TicTacAiMCTS : TicTacPlayerBase
 {
-    Ai_ctx<13000, TicTacBoard::Move, UQWORD> ai_ctx;
+    using PatternType = Pattern<9+9>;
+    static constexpr int MaxPatterns = 9*9;
+    Ai_ctx<13000, TicTacBoard::Move, UQWORD, PatternType, MaxPatterns> ai_ctx;
+    static constexpr int simDepth=9, minimaxDepth=9;
 
     TicTacBoard::Move selectMove([[maybe_unused]] const TicTacBoard& original, [[maybe_unused]] const int input) override
     {
-        /*
-            float simulate(const Board *original) const override
-    	    {
-                TicTacBoard clone;
-                original->cloneInto(&clone);
-                //clone.switchPlayer();
-                int nMoves=clone.generateMovesAndGetCnt();
-                nMoves -= 1;
-                int yyy = nMoves;
-                int minimaxScore = -2;
-                int ggg1[12] = {0};
-                int ggg2[12] = {0};
-                while (nMoves>=0)
-                {
-                    const Move moveHere = clone.getMove(nMoves);
-                    ggg1[nMoves] = moveHere;
-                    const int mnx = -minimax(clone, moveHere);
-                    ggg2[nMoves] = mnx;
-                    if (mnx>minimaxScore)
-                        minimaxScore = mnx;
-                    nMoves -= 1;
-                }
-
-                for (; yyy>=0; yyy -= 1)
-                    std::printf("mv: %d mx: %d \n", ggg1[yyy], ggg2[yyy]);
-
-                return minimaxScore;
-            }
-
-
-        } randRoll(original.getCurrentPlayer());*/
         const auto res =
-            mcts<13000, 1633, 9,9, int, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
-        return res.move;
+            mcts<150, simDepth, minimaxDepth, int, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
+        return res.best;
+
+        /*
+        const MCTS_result<YavalathBoard::YavMove> res =
+            mcts<400, simDepth, minimaxDepth, YavalathBoard::YavMove, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
+        s
+        */
     }
 };
-
-/*
-struct TicTacAiMinimax : TicTacPlayerBase
-{
-    SWORD minimax(const TicTacBoard& prev, const TicTacBoard::Move mv)
-    {
-        TicTacBoard clone;
-        prev.cloneInto(&clone);
-        clone.switchPlayer();
-        const auto outcome = clone.doMove(mv);
-        if (outcome!=include_ai::Outcome::running)
-      	{
-            if (clone.getCurrentPlayer() == clone.getWinner())
-                return -1;
-            else
-                return 1;
-        }
-        int nMoves = clone.generateMovesAndGetCnt();
-        nMoves -= 1;
-        int minimaxScore = -2;
-        while (nMoves > -1)
-        {
-            const TicTacBoard::Move moveHere = clone.getMove(nMoves);
-            const int mnx = -minimax(clone, moveHere);
-            if (mnx>minimaxScore)
-                minimaxScore = mnx;
-            nMoves -= 1;
-        }
-        return minimaxScore==-2 ? 0 : minimaxScore;
-    }
-
-    TicTacBoard::Move selectMove([[maybe_unused]] const TicTacBoard& original, [[maybe_unused]] const int input) override
-    {
-        TicTacBoard clone = original.clone();
-        clone.switchPlayer();
-        TicTacBoard::AvailMoves availMoves;
-        int nMoves=clone.generateMovesAndGetCnt(availMoves);
-        nMoves -= 1;
-        int minimaxScore = -2;
-        SWORD selMove=availMoves[0];
-        while (nMoves >= 0)
-        {
-            const TicTacBoard::Move moveHere = availMoves[nMoves];
-            const int mnx = -minimax(clone, moveHere);
-            if (mnx>minimaxScore)
-            {
-                minimaxScore = mnx;
-                selMove = moveHere;
-            }
-            nMoves -= 1;
-            std::printf("%d %d \n", moveHere , mnx);
-        }
-        std::putchar(clone.pos[0]+'0');std::putchar(clone.pos[1]+'0');std::putchar(clone.pos[2]+'0');std::putchar('\n');
-        std::putchar(clone.pos[3]+'0');std::putchar(clone.pos[4]+'0');std::putchar(clone.pos[5]+'0');std::putchar('\n');
-        std::putchar(clone.pos[6]+'0');std::putchar(clone.pos[7]+'0');std::putchar(clone.pos[8]+'0');std::putchar('\n');
-        std::putchar(clone.getCurrentPlayer()+'0');std::putchar('\n');
-        return selMove;
-    }
-};*/
 
 
 

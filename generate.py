@@ -6,6 +6,10 @@ files = [
 ("src/bitalloc.cpp", []),
 ("src/micro_math.hpp", []),
 ("src/micro_math.cpp", []),
+("src/similarity.hpp", []),
+("src/similarity.cpp", []),
+# ("src/neural.hpp", []),
+# ("src/neural.cpp", []),
 ("src/ai.hpp", []),
 ("src/ai.cpp", [])
 ]
@@ -51,11 +55,46 @@ merge_result = """/*
     Like this:
         #define INCLUDEAI_IMPLEMENTATION
         #include \"includeai.hpp\"
+
+    AUTHOR
+        Pitiless Peanut (aka. Shaiden Spreitzer, Professor Peanut, etc...) of VECTORPHASE
+        
+    LICENSE 
+        BSD 4-Clause (See end of file)
 */\n\n"""
 
 license = """\n/*
-MIT
-2025 Shaiden Spreitzer (aka. Pitiless Peanut, Professor Peanut, etc...)
+Copyright (c) 2025, VECTORPHASE Systems
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. All advertising materials mentioning features or use of this software must
+   display the following acknowledgement:
+     This product includes software developed by VECTORPHASE
+
+4. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY COPYRIGHT HOLDER "AS IS" AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+EVENT SHALL COPYRIGHT HOLDER BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */\n
 """
 
@@ -63,19 +102,22 @@ merge_result += "#ifndef INCLUDEAI_HPP\n#define INCLUDEAI_HPP\n\n"
 merge_result += "#ifdef INCLUDEAI_IMPLEMENTATION\n\n\n"
 merge_result += """#include <cmath>
 #include <concepts>
-#if defined(__x86_64__) || defined(__x86_64) || defined(__amd64__) || defined(__amd64) || defined(_M_X64)
+#if defined(AI_DEBUG)
+  #include <assert.h>
+#endif
+#if defined(__AVX__) || defined(__AVX2__) || defined(__AVX512F__) || defined(__SSSE3__)
   #include <immintrin.h>
-#elif defined(__aarch64__)
+#elif defined(__ARM_NEON)
   #include <arm_neon.h>
-#elif defined(__wasm__)
-  // nothing?
+#elif defined(__wasm_simd128__)
+  #include <wasm_simd128.h>
 #else
   #error "unknown arch"
 #endif\n\n
 namespace include_ai {\n\n\n
 """
 
-remove = ["#include", "_HPP", "double include", "x86_64", "aarch64", "defined(__wasm__)", "nothing", "unknown", "include_ai"]
+remove = ["#include", "_HPP", "double include", "x86_64", "aarch64", "defined(__wasm__)", "nothing?", "unknown", "namespace include_ai"]
 
 for filename in unique:
     f = open(filename[0], "r")
@@ -87,7 +129,7 @@ for filename in unique:
             merge_result += code_line
     merge_result += "\n\n"
 
-merge_result += """} // namespace single_header_ai\n\n\n
+merge_result += """} // namespace include_ai\n\n\n
 #endif // INCLUDEAI_IMPLEMENTATION\n\n
 #endif // INCLUDEAI_HPP\n
 """
