@@ -28,7 +28,12 @@
 
     UDWORD pcg32rand(const UQWORD seed)
     {
-        static pcg32 generator(seed);
+        static bool initialized = false;
+        static pcg32 generator;
+        if (seed != 0 || !initialized) {
+            generator = pcg32(seed);
+            initialized = true;
+        }
         return generator();
     }
 
@@ -57,7 +62,12 @@
 
     UWORD pcg16rand(const UDWORD seed)
     {
-        static pcg16 generator(seed);
+        static bool initialized = false;
+        static pcg16 generator;
+        if (seed != 0 || !initialized) {
+            generator = pcg16(seed);
+            initialized = true;
+        }
         return generator();
     }
 
