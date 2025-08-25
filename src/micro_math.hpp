@@ -45,8 +45,8 @@
         constexpr UWORD operator()();
     };
 
-    UDWORD pcg32rand(const UQWORD seed);
-    UWORD  pcg16rand(const UDWORD seed);
+    UDWORD pcg32rand(const UQWORD seed=0);
+    UWORD  pcg16rand(const UDWORD seed=0);
 
     template <typename Int>
     auto pcgRand(const Int seed=0)
