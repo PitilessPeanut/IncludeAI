@@ -293,7 +293,7 @@ int shallowestTerminalDepth = 9999;
         for (int i=0; i<swapDst.activeBranches; ++i)
             swapDst.branches[i].parent = &swapDst;
 
-        #ifdef INCLUDEAI__PREVENT_ROOTNODES_FROM_GETTING_UPDATED_CORRECTLY
+        #ifdef INCLUDEAI__PREVENT_PARENT_NODES_FROM_GETTING_UPDATED_CORRECTLY
         #else
           swapSrc.activeBranches = Node<MoveType>::removed;
           swapSrc.moveHere       = removedMoveHere;
@@ -490,7 +490,7 @@ int shallowestTerminalDepth = 9999;
                     #if 0
                       const float exploit = std::abs(arm.score) / (arm.visits-0.f); // <- Not this
                     #endif
-                    constexpr float exploration_C = 1.618f * 2; // useless?
+                    constexpr float exploration_C = 1.618f;// * 2; // useless?
                     constexpr float Hoeffdings_multiplier = 1.f; //2.f; // (http://www.incompleteideas.net/609%20dropbox/other%20readings%20and%20resources/MCTS-survey.pdf)
                     const float explore = exploration_C * aiSqrt((Hoeffdings_multiplier * aiLog(node.visits)) / arm.visits);
                     /*
@@ -835,8 +835,6 @@ int shallowestTerminalDepth = 9999;
                     }
                     else
                     {
-                        //__builtin_trap(); // todo remove
-
                         child = parent;
                         aiAssert(parent != parent->parent);
                         parent = parent->parent; // Lolz
@@ -924,22 +922,24 @@ int shallowestTerminalDepth = 9999;
                 shallowestTerminal = branch.shallowestTerminalDepth;
         }
 
-        if (shallowestTerminal != 9999)
-        {
-            for (int i=0; i < root->createdBranches; ++i)
-            {
-                Node<MoveType>& branch = root->branches[i];
-                if (branch.shallowestTerminalDepth == shallowestTerminal)
-                {
-                    if (branch.score > 0.f)
-                        continue;
-                }
-                else 
-                {
-                    branch.score = -1000.f; // -iters! Todo!!
-                }
-            }
-        } // (shallowestTerminal != 9999)
+        #ifndef INCLUDEAI__DISABLE_DETECTION_OF_INSTANT_WIN
+          if (shallowestTerminal != 9999)
+          {
+              for (int i=0; i < root->createdBranches; ++i)
+              {
+                  Node<MoveType>& branch = root->branches[i];
+                  if (branch.shallowestTerminalDepth == shallowestTerminal)
+                  {
+                      if (branch.score > 0.f)
+                          continue;
+                  }
+                  else 
+                  {
+                      branch.score = -1000.f; // -iters! Todo!!
+                  }
+              }
+          } // (shallowestTerminal != 9999)
+        #endif
 
         // Yes, scoring is complex!!!:
         auto bestScore = root->branches[0].score;
@@ -1002,6 +1002,7 @@ int shallowestTerminalDepth = 9999;
                 if (i==bestScore) std::printf("\033[1;36m");
                 std::printf("mv: %c %d  bs:%d   ", yavpos[root->branches[i].moveHere], root->branches[i].moveHere
                            , root->branches[i].branchScore);
+                // v/s == exploration E!
                 std::printf("s:%4.3f v:%d  dp: %d   act:%d  s/v:%2.3f v/s:%2.5f \033[0m \n", root->branches[i].score, root->branches[i].visits, root->branches[i].shallowestTerminalDepth, root->branches[i].activeBranches,
                     root->branches[i].score/ root->branches[i].visits,root->branches[i].visits/root->branches[i].score);
             }

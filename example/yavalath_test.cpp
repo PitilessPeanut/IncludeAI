@@ -228,9 +228,9 @@ struct YavalathAiMCTS : YavalathPlayerBase
             fresh = false;
             return pcgRand<UDWORD>() % 121;
         }
-        constexpr int simDepth=21, minimaxDepth=2;
+        constexpr int simDepth=21, minimaxDepth=3;
         const MCTS_result<YavalathBoard::YavMove> res =
-            mcts<400, simDepth, minimaxDepth, YavalathBoard::YavMove, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
+            mcts<1800, simDepth, minimaxDepth, YavalathBoard::YavMove, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
         std::printf("simulations: %d, minimaxes: %d \n", res.statistics[MCTS_result<YavalathBoard::YavMove>::simulations], res.statistics[MCTS_result<YavalathBoard::YavMove>::minimaxes]);
         return res.best;
     }
@@ -252,7 +252,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[])
 
     for (int tests=0; tests<900; ++tests)
     {
-        YavalathPlayerBase *players[3] = { nullptr, &ai[0], &ai[1] };
+        YavalathPlayerBase *players[3] = { nullptr, &h1, &ai[1] };
 
         YavalathBoard yavalathBoard;
         yavalathBoard.switchPlayer(); // switch back to player 1 after start
