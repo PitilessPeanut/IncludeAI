@@ -9,7 +9,7 @@ set -euo pipefail
 # -Wimplicit-fallthrough # warn missing [[fallthrough]]
 # -Wundef # Macros must be defined
 
-clang++ -I../src -std=c++23 -fno-exceptions -fno-rtti \
+g++ -I../src -std=c++23 -fno-exceptions -fno-rtti \
         -pedantic -ffast-math -Wno-unknown-warning-option \
         -Wno-misleading-indentation -Wno-different-indent \
         -finput-charset=UTF-8 -Wall -Wextra -Oz -flto \
