@@ -16,8 +16,8 @@ source_paths = [
     "src/micro_math.cpp",
     "src/similarity.hpp",
     "src/similarity.cpp",
-    # "src/neural.hpp",
-    # "src/neural.cpp",
+    "src/neural.hpp",
+    "src/neural.cpp",
     "src/ai.hpp",
     "src/ai.cpp"
 ]
