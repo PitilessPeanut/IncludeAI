@@ -23,14 +23,11 @@
           , size(nBits)
         {}
 
-<<<<<<< HEAD
         explicit constexpr Bitvec(const Int *mem, const int nBits)
           : bitvec(mem)
           , size(nBits)
         {}
         
-=======
->>>>>>> 239e7ef6be7264c312219bd1f79de0888fc8a40e
         constexpr bool operator==(const Bitvec<Int, Charbits>& rhs) const
         {
             bool same = true;
