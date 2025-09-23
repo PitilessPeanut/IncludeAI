@@ -54,11 +54,23 @@ def convert_asm_to_hpp(asm_path):
         print(f"ERROR: Could not find .globl directive in {asm_path}", file=sys.stderr)
         sys.exit(1)
 
-    # Format instructions for C++ multi-line string literal
-    # Each line is followed by a newline and a tab for formatting
-    formatted_asm = "\\n\\t".join(asm_instructions)
+    all_asm_lines = [".intel_syntax noprefix"] + asm_instructions + [".att_syntax prefix"]
 
-    # Create the C++ header content
+    # Format each instruction as its own C++ string literal.
+    formatted_lines = []
+    for i, instruction in enumerate(all_asm_lines):
+        # Escape characters that have special meaning in C++ strings.
+        escaped_instruction = instruction.replace('\\', '\\\\').replace('"', '\\"')
+
+        # All lines except the very last one need a newline for the assembler.
+        if i < len(all_asm_lines) - 1:
+            formatted_lines.append(f'        "{escaped_instruction}\\n\\t"')
+        else:
+            # The last line doesn't need a trailing newline.
+            formatted_lines.append(f'        "{escaped_instruction}"')
+
+    formatted_asm = '\n'.join(formatted_lines)
+
     hpp_filename = os.path.basename(asm_path).replace('.S', '.hpp')
     hpp_guard = hpp_filename.upper().replace('.', '_')
 
@@ -81,9 +93,7 @@ __attribute__((naked))
 int {func_name}(int n) {{
     // The 'volatile' keyword prevents the compiler from optimizing this block away.
     __asm__ __volatile__(
-        ".intel_syntax noprefix\\n\\t"
-        "{formatted_asm}"
-        "\\n\\t.att_syntax prefix"
+        {formatted_asm}
     );
 }}
 
@@ -91,6 +101,8 @@ int {func_name}(int n) {{
 
 #endif // __GNUC__ && __x86_64__
 
+#else // {hpp_guard}
+  #error \"double include\"
 #endif // {hpp_guard}
 """
     return hpp_content, hpp_filename
@@ -140,17 +152,6 @@ for path in source_paths:
     if deps:
         print(f"  - {path} depends on: {', '.join(deps)}")
 print("---------------------------------\n")
-
-# for testing only
-mix = [
-("g", ["d","f","e"]),
-("a", []),
-("f", ["b","c"]),
-("b", []),
-("c", []),
-("d", ["e","c"]),
-("e", ["a","b"])
-]
 
 
 def topological_sort(files_with_deps):
@@ -266,12 +267,12 @@ merge_result += """#include <cmath>
 #elif defined(__wasm_simd128__)
   #include <wasm_simd128.h>
 #else
-  #error "unknown arch"
+  #error "unknown arch! (use '-msimd128' to fix)"
 #endif\n\n
 namespace include_ai {\n\n\n
 """
 
-remove = ["#include", "_HPP", "double include", "x86_64", "aarch64", "defined(__wasm__)", "nothing?", "unknown", "namespace include_ai"]
+remove = ["#include", "_HPP", "double include", "AVX", "NEON", "defined(__wasm_simd128__)", "nothing?", "unknown", "namespace include_ai"]
 
 for filename, _ in unique: # 'unique' tuple is unpacked as (filename, dependencies)
     f = open(filename, "r")

@@ -42,10 +42,6 @@
 
         constexpr include_ai::Outcome doMove(const TicTacTest::Move mv)
         {
-            // checking if valid input only needed when running on a server:
-            if (pos[mv]) [[unlikely]]
-                return include_ai::Outcome::invalid; // <- Therefore this is for demo only!
-
             pos[mv] = currentPlayer;
             int win = pos[0] && (pos[0]==pos[1]) && (pos[0]==pos[2]);
             win += pos[3] && (pos[3]==pos[4]) && (pos[3]==pos[5]);

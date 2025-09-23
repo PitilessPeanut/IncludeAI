@@ -56,7 +56,7 @@ namespace include_ai {
 /****************************************/
 /*            outcome of a single round */
 /****************************************/
-    enum class Outcome { running, draw, fin, invalid };
+    enum class Outcome { running, draw, fin };
 
 
 /****************************************/
@@ -370,7 +370,7 @@ int shallowestTerminalDepth = 9999;
     constexpr SWORD MinimaxLose             =  -1;
     constexpr SWORD MinimaxInit             =  -2;
     // Both "undeterminable" and "indeterminable" are correct and can be used interchangeably in many
-    // contexts. However, "indeterminable" is more commonly used in formal or academic writing. (chatgpt)
+    // contexts. However, "indeterminable" is more commonly used in formal or academic writing. (ai)
     constexpr SWORD MinimaxIndeterminable99 = -99; // Debug
     constexpr SWORD MinimaxIndeterminable   =   0;
 
@@ -483,7 +483,7 @@ int shallowestTerminalDepth = 9999;
                         // UCB requires each slot-machine 'arm' to be tried at least once (https://u.cs.biu.ac.il/~sarit/advai2018/MCTS.pdf):
                         return &arm; // Prevent x/0
                     }
-                    
+
                     // todo: epl/expl shld be adjusted to utilize max node use: check rate of node use vs nodes released and adjust based on that!
                     // todo2: score prefer if > 0?? (same like at the end????)
                     const float exploit = arm.score / (arm.visits-0.f); // <- This
@@ -582,7 +582,7 @@ int shallowestTerminalDepth = 9999;
                 //aiAssert(selectedNode->branchScore == 0);
                 aiAssert(selectedNode->parent == parentOfSelected);
                 const MoveType moveHere = selectedNode->moveHere;
-                outcome = boardClone.doMove(moveHere);
+                [[maybe_unused]] const auto outcome = boardClone.doMove(moveHere);
                 boardClone.switchPlayer();
                 depth += 1;
                 if (outcome != Outcome::running)
@@ -627,7 +627,7 @@ int shallowestTerminalDepth = 9999;
                 if (selectedNode == root)
                     rootMovesRemaining = nValidMoves;
 
-                std::printf("np:%d, avl:%d \n", nodePos, nValidMoves);
+                //std::printf("np:%d, avl:%d \n", nodePos, nValidMoves);
 
                 if ((nodePos+nValidMoves) >= ai_ctx.numNodes) [[unlikely]] // This can happen at the end
                 {
@@ -665,7 +665,7 @@ int shallowestTerminalDepth = 9999;
                     [[maybe_unused]] const auto& unusedNode =
                         insertNodeIntoPool(ai_ctx, nodePos, selectedNode, move);
                 }
-                std::printf("\033[1;37mnew branch:%p brch:%p \033[0m \n", selectedNode-ai_ctx.nodePool, (&selectedNode->branches[0])-ai_ctx.nodePool);
+                //std::printf("\033[1;37mnew branch:%p brch:%p \033[0m \n", selectedNode-ai_ctx.nodePool, (&selectedNode->branches[0])-ai_ctx.nodePool);
                 for (int i=0; false && i<selectedNode->createdBranches; ++i) // todo put this loop into the assert
                 {
                     std::printf("\033[1;36m%p (%d) exp:%d mv:%d \033[0m \n", (&selectedNode->branches[i])-ai_ctx.nodePool, selectedNode->branches[i].moveHere, 0, selectedNode->branches[i].moveHere);
@@ -891,7 +891,7 @@ int shallowestTerminalDepth = 9999;
                     // how -interesting- a position is:
                     selectedNode->visits += 1;
                     selectedNode->score += score;
-                    
+
                     //depth += 1;
                     //selectedNode->weight += 1; //(fib(cur)-0.f) / (fib(depth)-0.f); //(aiLog(cur* 10)/2) / (depth-0.f); //((cur-0.f)/(depth-0.f)) ; weight
                 //    cur += 1.f;
@@ -901,7 +901,7 @@ int shallowestTerminalDepth = 9999;
                 }
                 depth -= 1;
 
-                std::printf("sel:%p score: %1.3f act:%d crt:%d  \n", selectedNode-ai_ctx.nodePool, selectedNode->score, selectedNode->activeBranches, selectedNode->createdBranches);
+                //std::printf("sel:%p score: %1.3f act:%d crt:%d  \n", selectedNode-ai_ctx.nodePool, selectedNode->score, selectedNode->activeBranches, selectedNode->createdBranches);
 
 
                 selectedNode = selectedNode->parent;
@@ -911,7 +911,7 @@ int shallowestTerminalDepth = 9999;
             }
         } // iterations
 
-        
+
         // This is the part NOT discussed in the AlphaZero paper (or ANY mcts paper for that matter):
         // What to do when terminal and non-terminal nodes appear in the tree mixed together????
         int shallowestTerminal = 9999;
@@ -933,7 +933,7 @@ int shallowestTerminalDepth = 9999;
                       if (branch.score > 0.f)
                           continue;
                   }
-                  else 
+                  else
                   {
                       branch.score = -1000.f; // -iters! Todo!!
                   }
@@ -959,7 +959,7 @@ int shallowestTerminalDepth = 9999;
                 if (expectedVisits > root->branches[posScore].visits)
                     posScore = i;
             }
-    
+
             if (expectedVisits > bestVisits)
             {
                 bestVisits = expectedVisits;
@@ -980,35 +980,18 @@ int shallowestTerminalDepth = 9999;
 
 
 
-            unsigned char yavpos[11*11] =
-                    {0, 0,  0,  0,  0,  0,  0,  0,  0,  0, 0,
-                     0, 0,  0,  0,  0, 'a','b','c','d','e',0,
-                     0, 0,  0,  0, 'f','g','h','i','j','k',0,
-                     0, 0,  0, 'l','m','n','o','p','q','r',0,
-                     0, 0, 's','t','u','v','w','x','y','z',0,
-                     0,'A','B','C','D','E','F','G','H','I',0,
-                     0,'J','K','L','M','N','O','P','Q', 0, 0,
-                     0,'R','S','T','U','V','W','X', 0,  0, 0,
-                     0,'Y','Z','1','2','3','4', 0,  0,  0, 0,
-                     0,'5','6','7','8','9', 0,  0,  0,  0, 0,
-                     0, 0,  0,  0,  0,  0,  0,  0,  0,  0, 0
-                    };
-
-
 
             for (int i=0; i<root->createdBranches; ++i)
             {
-    
-                if (i==bestScore) std::printf("\033[1;36m");
-                std::printf("mv: %c %d  bs:%d   ", yavpos[root->branches[i].moveHere], root->branches[i].moveHere
-                           , root->branches[i].branchScore);
+
+              //  if (i==bestScore) std::printf("\033[1;36m");
+                //std::printf("mv: %c %d  bs:%d   ", root->branches[i].moveHere, root->branches[i].moveHere, root->branches[i].branchScore);
                 // v/s == exploration E!
-                std::printf("s:%4.3f v:%d  dp: %d   act:%d  s/v:%2.3f v/s:%2.5f \033[0m \n", root->branches[i].score, root->branches[i].visits, root->branches[i].shallowestTerminalDepth, root->branches[i].activeBranches,
-                    root->branches[i].score/ root->branches[i].visits,root->branches[i].visits/root->branches[i].score);
+                //std::printf("s:%4.3f v:%d  dp: %d   act:%d  s/v:%2.3f v/s:%2.5f \033[0m \n", root->branches[i].score, root->branches[i].visits, root->branches[i].shallowestTerminalDepth, root->branches[i].activeBranches, root->branches[i].score/ root->branches[i].visits,root->branches[i].visits/root->branches[i].score);
             }
             std::printf("threshold: %f mv: %d \033[1;31mcutoff: %d\033[0m ACT:%d maxPatternsim %f \n",
                           threshold, root->branches[posScore].moveHere, cutoffDepth, root->activeBranches, ai_ctx.maxPatternSimilarity);
-    
+
             mcts_result.statistics[MCTS_result<MoveType>::maxPatternSimilarity] = ai_ctx.maxPatternSimilarity*100;
             mcts_result.best = [root, posVisits, posScore, bestScore]
                                {

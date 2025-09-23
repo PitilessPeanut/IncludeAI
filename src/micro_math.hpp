@@ -64,8 +64,7 @@
     template <typename Int>
     constexpr Int fib(const Int i)
     {
-        if (i<=1)
-            return i;
+        if (i<=1) return i;
         return fib(i-1) + fib(i-2);
     }
 

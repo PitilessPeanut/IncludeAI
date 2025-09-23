@@ -6,8 +6,8 @@
 
     AUTHOR
         Pitiless Peanut (aka. Shaiden Spreitzer, Professor Peanut, etc...) of VECTORPHASE
-        
-    LICENSE 
+
+    LICENSE
         BSD 4-Clause (See end of file)
 */
 
@@ -22,14 +22,14 @@
 #if defined(AI_DEBUG)
   #include <assert.h>
 #endif
-#if defined(__x86_64__) || defined(__x86_64) || defined(__amd64__) || defined(__amd64) || defined(_M_X64)
+#if defined(__AVX__) || defined(__AVX2__) || defined(__AVX512F__) || defined(__SSSE3__)
   #include <immintrin.h>
-#elif defined(__aarch64__)
+#elif defined(__ARM_NEON)
   #include <arm_neon.h>
-#elif defined(__wasm__)
+#elif defined(__wasm_simd128__)
   #include <wasm_simd128.h>
 #else
-  #error "unknown arch"
+  #error "unknown arch! (use '-msimd128' to fix)"
 #endif
 
 
@@ -108,7 +108,27 @@ typedef DOUBLE LREAL;
 static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
 
 
-
+/*
+  // original asmtypes.h types:
+  typedef unsigned short BOOL;
+  typedef unsigned char BYTE;
+  typedef unsigned long DWORD;
+  typedef signed char SBYTE;
+  typedef signed char SCHAR;
+  typedef signed long SDWORD;
+  typedef signed int SINT;
+  typedef signed long SLONG;
+  typedef signed short SSHORT;
+  typedef signed short SWORD;
+  typedef unsigned char UBYTE;
+  typedef unsigned char UCHAR;
+  typedef unsigned long UDWORD;
+  typedef unsigned int UINT;
+  typedef unsigned long ULONG;
+  typedef unsigned short USHORT;
+  typedef unsigned short UWORD;
+  typedef unsigned short WORD;
+*/
 
 
 
@@ -147,7 +167,10 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
     template <typename Int>
     constexpr Int rotl_comptime(Int x, int amount)
     {
-        return ((x << amount) | (x >> ((sizeof(Int)*CHARBITS) - amount)));
+        constexpr int bits = sizeof(Int) * CHARBITS;
+        const int effective_amount = amount & (bits - 1);
+        if (effective_amount == 0) return x;
+        return ((x << effective_amount) | (x >> (bits - effective_amount)));
     }
 
     SDWORD rotl_runtime(const SDWORD x, int amount);
@@ -216,14 +239,14 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
             while (discoveredSize>0)
             {
                 constexpr BitfieldType everyBitSet = ~0;
-                if (discoveredSize <= Intbits)
+                if (discoveredSize < Intbits)
                 {
                     for (int bucketNo=0; bucketNo<NumberOfBuckets; ++bucketNo)
                     {
                         const int availTail = ctz(bucketPool[bucketNo]);
                         if (availTail >= discoveredSize)
                         {
-                            BitfieldType mask = everyBitSet << discoveredSize; // the 'discoveredSize' here is always <= than Intbits
+                            BitfieldType mask = everyBitSet << discoveredSize;
                             mask = rotl(mask, availTail-discoveredSize);
                             bucketPool[bucketNo] = bucketPool[bucketNo] | ~mask;
 
@@ -255,10 +278,18 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
                                 if (remainingBits > 0)
                                 {
                                     const BitfieldType mask = everyBitSet << (Intbits - remainingBits);
-                                    bucketPool[bucketNo+bucketsRequired-needsExactFullBuckets] = mask;
+                                    //bucketPool[bucketNo+bucketsRequired-needsExactFullBuckets] |= mask;
+                                    if ((bucketPool[bucketNo+bucketsRequired]&mask) == 0)
+                                    {
+                                        bucketPool[bucketNo+bucketsRequired] |= mask;
+                                       // break;
+                                    }
+                                    //else
+                                    //    break;
                                 }
-                                return Pos{ .posOfAvailChunk = static_cast<int>(bucketNo*Intbits)
-                                          , .length = static_cast<int>(discoveredSize)
+
+                                return Pos{ .posOfAvailChunk = static_cast<int>(bucketNo*Intbits),
+                                            .length = static_cast<int>(discoveredSize)
                                           };
                             }
                         }
@@ -301,34 +332,37 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
 
         constexpr void free(const int pos, const int len)
         {
-            // two bugs: pos 0, pos 64 len 128!
-            constexpr BitfieldType everyBitSet = ~0;
-            int startBucket = pos/Intbits;
-            int endBucket = (pos+len)/Intbits;
-            const BitfieldType maskHead = everyBitSet << (Intbits - (pos%Intbits));
-            BitfieldType maskTail = everyBitSet << (Intbits - ((pos+len)%Intbits));
-
-            // fix nasty bug where additional slots get deleted when the delete range reaches the edge:
-            if (((pos+len)-(endBucket*Intbits)) == 0) // ((pos+len) % Intbits) == 0
-                maskTail = 0;
-
-            if (startBucket == endBucket)
+            // todo: this current free() implementation mirrors the "BitAlloc_Mode::TIGHT" version of largestAvailChunk()
+            //       there should be an optimized version for "BitAlloc_Mode::FAST" too! A TIGHT mode free() is
+            //       compatible with FAST mode largestAvailChunk() but not vice versa.
+            if constexpr (false && mode == BitAlloc_Mode::FAST)
             {
-                bucketPool[startBucket] = (maskHead | ~maskTail) & bucketPool[startBucket];
             }
-            else
+            else if constexpr (true || mode == BitAlloc_Mode::TIGHT) // todo remove 'true ||'
             {
-                // Start
-                bucketPool[startBucket] = maskHead & bucketPool[startBucket];
+                constexpr BitfieldType everyBitSet = ~0;
+                int startBucket = pos/Intbits;
+                int endBucket = (pos+len-1)/Intbits;
+                const BitfieldType maskHead = (pos % Intbits == 0) ? 0 : (everyBitSet << (Intbits - (pos%Intbits)));
+                const BitfieldType maskTail = ((pos+len) % Intbits == 0) ? everyBitSet /*everyBitSet (todo test!) */: (everyBitSet << (Intbits - ((pos+len)%Intbits)));
 
-                // End
-                bucketPool[endBucket] = ~maskTail & bucketPool[endBucket];
+                if (startBucket == endBucket)
+                {
+                    bucketPool[startBucket] = (maskHead | ~maskTail) & bucketPool[startBucket];
+                }
+                else
+                {
+                    // Start
+                    bucketPool[startBucket] = maskHead & bucketPool[startBucket];
 
-                // Middle
-                endBucket -= 1;
-                while (&bucketPool[startBucket++] != &bucketPool[endBucket])
-                    bucketPool[startBucket] = 0;
-            }
+                    // End
+                    bucketPool[endBucket] = ~maskTail & bucketPool[endBucket];
+
+                    // Middle
+                    while (++startBucket < endBucket)
+                        bucketPool[startBucket] = 0;
+                }
+            } // else if constexpr (mode == BitAlloc_Mode::TIGHT)
         }
 
         constexpr void clearAll()
@@ -337,7 +371,6 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
                 bucketPool[i] = 0;
         }
     };
-
 
 
 
@@ -397,7 +430,7 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
     UDWORD rotl_runtime(const UDWORD x, int amount)
     {
         #ifdef _WIN32
-          _rotl(x, amount);
+          return _rotl(x, amount);
         #else
           return rotl_comptime(x, amount);
         #endif
@@ -440,47 +473,97 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
     static_assert([]
                   {
                       constexpr bool comptime = true;
-                      BitAlloc<5*CHARBITS, UBYTE, BitAlloc_Mode::FAST, comptime> testAllocator;
-                      auto pos = testAllocator.largestAvailChunk(3);
-                      bool ok = pos.posOfAvailChunk==0 && pos.length==3;
-                      pos = testAllocator.largestAvailChunk(3);
+                      BitAlloc<256, UQWORD, BitAlloc_Mode::FAST, comptime> testAllocator1;
+                      testAllocator1.largestAvailChunk(63);
+                      testAllocator1.largestAvailChunk(65);
+                      testAllocator1.largestAvailChunk(64);
+                      testAllocator1.free(1, 191);
+                      testAllocator1.free(0, 1);
+                      bool ok = testAllocator1.bucketPool[0] == 0;
+                      auto pos1 = testAllocator1.largestAvailChunk(257);
+                      ok = ok && pos1.posOfAvailChunk==0 && pos1.length==255; // Max size
+                      testAllocator1.free(64, 3);
+                      ok = ok && testAllocator1.bucketPool[1] == 0b0001111111111111111111111111111111111111111111111111111111111111;
+                      testAllocator1.free(0, 64);
+                      ok = ok && testAllocator1.bucketPool[0] == 0;
+                      pos1 = testAllocator1.largestAvailChunk(65);
+                      ok = ok && testAllocator1.bucketPool[1] == 0b1001111111111111111111111111111111111111111111111111111111111111;
+                      ok = ok && pos1.posOfAvailChunk==0 && pos1.length==65;
+                      testAllocator1.free(63, 1);
+                      ok = ok && testAllocator1.bucketPool[0] == 0b1111111111111111111111111111111111111111111111111111111111111110;
+                      pos1 = testAllocator1.largestAvailChunk(1);
+                      ok = ok && testAllocator1.bucketPool[0] == 0xFFFFFFFFFFFFFFFF;
+                      ok = ok && pos1.posOfAvailChunk==63 && pos1.length==1;
+                      ok = ok && testAllocator1.bucketPool[1] == 0b1001111111111111111111111111111111111111111111111111111111111111;
+                      pos1 = testAllocator1.largestAvailChunk(2);
+                      ok = ok && pos1.length==0 && pos1.posOfAvailChunk==-1;
+                      testAllocator1.free(64, 1);
+                      ok = ok && testAllocator1.bucketPool[1] == 0b0001111111111111111111111111111111111111111111111111111111111111;
+                      testAllocator1.free(64, 64);
+                      pos1 = testAllocator1.largestAvailChunk(64);
+                      ok = ok && pos1.posOfAvailChunk==64 && pos1.length==64;
+                      testAllocator1.free(0, 128);
+                      ok = ok && testAllocator1.bucketPool[0] == 0;
+                      ok = ok && testAllocator1.bucketPool[1] == 0;
+
+                      BitAlloc<5*CHARBITS, UBYTE, BitAlloc_Mode::FAST, comptime> testAllocator2;
+                      auto pos = testAllocator2.largestAvailChunk(3);
+                      ok = ok && pos.posOfAvailChunk==0 && pos.length==3;
+                      pos = testAllocator2.largestAvailChunk(3);
                       ok = ok && pos.posOfAvailChunk==3 && pos.length==3;
-                      pos = testAllocator.largestAvailChunk(2);
+                      pos = testAllocator2.largestAvailChunk(2);
                       ok = ok && pos.posOfAvailChunk==6 && pos.length==2;
-                      ok = ok && testAllocator.bucketPool[0] == 0b11111111;
-                      testAllocator.free(3, 3);
-                      ok = ok && testAllocator.bucketPool[0] == 0b11100011;
-                      pos = testAllocator.largestAvailChunk(5);
+                      ok = ok && testAllocator2.bucketPool[0] == 0b11111111;
+                      testAllocator2.free(3, 3);
+                      ok = ok && testAllocator2.bucketPool[0] == 0b11100011;
+                      pos = testAllocator2.largestAvailChunk(5);
                       ok = ok && pos.posOfAvailChunk==8 && pos.length==5;
-                      ok = ok && testAllocator.bucketPool[1] == 0b11111000;
-                      pos = testAllocator.largestAvailChunk(18);
+                      ok = ok && testAllocator2.bucketPool[1] == 0b11111000;
+                      pos = testAllocator2.largestAvailChunk(18);
                       ok = ok && pos.posOfAvailChunk==16 && pos.length==18;
-                      ok = ok && testAllocator.bucketPool[0] == 0b11100011;
-                      ok = ok && testAllocator.bucketPool[1] == 0b11111000;
-                      ok = ok && testAllocator.bucketPool[2] == 255;
-                      ok = ok && testAllocator.bucketPool[3] == 255;
-                      ok = ok && testAllocator.bucketPool[4] == 0b11000000;
-                      pos = testAllocator.largestAvailChunk(7);
+                      ok = ok && testAllocator2.bucketPool[0] == 0b11100011;
+                      ok = ok && testAllocator2.bucketPool[1] == 0b11111000;
+                      ok = ok && testAllocator2.bucketPool[2] == 255;
+                      ok = ok && testAllocator2.bucketPool[3] == 255;
+                      ok = ok && testAllocator2.bucketPool[4] == 0b11000000;
+                      pos = testAllocator2.largestAvailChunk(7);
                       ok = ok && pos.posOfAvailChunk==34;
                       ok = ok && pos.length==6;
-                      testAllocator.free(10, 24);
-                   //   ok = ok && testAllocator.bucketPool[1] == 0b11000000;
-                  //    ok = ok && testAllocator.bucketPool[2] == 0;
-                  //    ok = ok && testAllocator.bucketPool[3] == 0;
-                  //    ok = ok && testAllocator.bucketPool[4] == 0b00111111;
-                  //    testAllocator.free(1, 1);
-                 //     ok = ok && testAllocator.bucketPool[0] == 0b10100011;
-                   //   testAllocator.free(12, 5);
-                   //   ok = ok && testAllocator.bucketPool[1] == 0b11000000;
-                   //   ok = ok && testAllocator.bucketPool[2] == 0;
-                   //   testAllocator.free(30, 6);
-                   //   ok = ok && testAllocator.bucketPool[3] == 0;
-                   //   ok = ok && testAllocator.bucketPool[4] == 0b00001111;
+                      testAllocator2.free(10, 24);
+                      ok = ok && testAllocator2.bucketPool[1] == 0b11000000;
+                      ok = ok && testAllocator2.bucketPool[2] == 0;
+                      ok = ok && testAllocator2.bucketPool[3] == 0;
+                      ok = ok && testAllocator2.bucketPool[4] == 0b00111111;
+                      testAllocator2.free(1, 1);
+                      ok = ok && testAllocator2.bucketPool[0] == 0b10100011;
+                      testAllocator2.free(12, 5); // free already free space
+                      ok = ok && testAllocator2.bucketPool[1] == 0b11000000; // should remain unchanged
+                      ok = ok && testAllocator2.bucketPool[2] == 0;          // unchanged
+                      testAllocator2.free(30, 6);
+                      ok = ok && testAllocator2.bucketPool[3] == 0;
+                      ok = ok && testAllocator2.bucketPool[4] == 0b00001111;
+                      pos = testAllocator2.largestAvailChunk(20);
+                      ok = ok && pos.posOfAvailChunk==16 && pos.length==20;
+                      ok = ok && testAllocator2.bucketPool[4] == 0b11111111; // should be 4 existing bits + 4 new bits
+                      return ok;
+                  }()
+                 );
 
-//                      posB = testAllocator.largestAvailChunk(20);
-     //   ok = ok && pos.pos==31 ; //&& pos.length<20;
-       // ok = ok && testAllocator.bucketPool[4] == 0b00011111;
-
+    static_assert([]
+                  {
+                      constexpr bool comptime = true;
+                      BitAlloc<4*CHARBITS, UBYTE, BitAlloc_Mode::FAST, comptime> testAlloc;
+                      testAlloc.largestAvailChunk(17);
+                      testAlloc.free(8, 8);
+                      bool ok = testAlloc.bucketPool[0] == 0xff;
+                      ok = ok && testAlloc.bucketPool[1] == 0b00000000;
+                     // ok = ok && testAlloc.bucketPool[2] == 0b10000000;
+                      const auto pos = testAlloc.largestAvailChunk(10); // not enough space anywhere
+                      ok = ok && testAlloc.bucketPool[1] == 0b11111111; // 8 of ten placed here
+                      ok = ok && pos.posOfAvailChunk==8 ; //&& pos.length==8;
+                      ok = ok && testAlloc.bucketPool[2] == 0b10000000; // This one should remain unchanged in the BitAlloc_Mode::FAST mode.
+                                                                        // In TIGHT mode, it would have been 0b11111111 with 7 bits placed here
+                      ok = ok && testAlloc.bucketPool[3] == 0;          // and the remaining 3 bits placed here
                       return ok;
                   }()
                  );
@@ -530,8 +613,8 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
         constexpr UWORD operator()();
     };
 
-    UDWORD pcg32rand(const UQWORD seed);
-    UWORD  pcg16rand(const UDWORD seed);
+    UDWORD pcg32rand(const UQWORD seed=0);
+    UWORD  pcg16rand(const UDWORD seed=0);
 
     template <typename Int>
     auto pcgRand(const Int seed=0)
@@ -549,8 +632,7 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
     template <typename Int>
     constexpr Int fib(const Int i)
     {
-        if (i<=1)
-            return i;
+        if (i<=1) return i;
         return fib(i-1) + fib(i-2);
     }
 
@@ -586,7 +668,12 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
 
     UDWORD pcg32rand(const UQWORD seed)
     {
-        static pcg32 generator(seed);
+        static bool initialized = false;
+        static pcg32 generator;
+        if (seed != 0 || !initialized) {
+            generator = pcg32(seed);
+            initialized = true;
+        }
         return generator();
     }
 
@@ -615,7 +702,12 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
 
     UWORD pcg16rand(const UDWORD seed)
     {
-        static pcg16 generator(seed);
+        static bool initialized = false;
+        static pcg16 generator;
+        if (seed != 0 || !initialized) {
+            generator = pcg16(seed);
+            initialized = true;
+        }
         return generator();
     }
 
@@ -780,7 +872,7 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
 /* better captures the "shape" or       */
 /* configuration of the position        */
 /****************************************/
-    template <typename Pattern>
+    template <typename Pattern,  bool comptime=false>
     constexpr float diversify(Pattern *dst, const Pattern& input, const int maxPatterns)
     {
         // Find a pair that is MOST similar:
@@ -801,8 +893,8 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
         }
 
         // Decide which of the pair to replace
-        const float sim1 = calculateNormalizedDotProduct<bool, Pattern::patternSize>(dst[idx1].pattern, input.pattern);
-        const float sim2 = calculateNormalizedDotProduct<bool, Pattern::patternSize>(dst[idx2].pattern, input.pattern);
+        const float sim1 = calculateNormalizedDotProduct<bool, Pattern::patternSize, comptime>(dst[idx1].pattern, input.pattern);
+        const float sim2 = calculateNormalizedDotProduct<bool, Pattern::patternSize, comptime>(dst[idx2].pattern, input.pattern);
 
         // Select the pattern that has higher similarity with input (we'll replace the one that's more redundant)
         const int replaceIdx = (sim1 < sim2) ? idx2 : idx1;
@@ -856,11 +948,107 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
                       const float needle[8] = {1.0f, 3.0f, 5.0f, 7.0f, 9.0f, 0.0f, 0.0f, 0.0f};
                       const float similarity1 = calculateNormalizedDotProduct<float, 8, true>(haystack1, needle);
                       const float similarity2 = calculateNormalizedDotProduct<float, 8, true>(haystack2, needle);
-                      bool ok = similarity1 < .4014f && similarity2 > .41f;
-                      ok = similarity1 < .83f && similarity2 > .82f;
+                      bool ok = similarity1 < .6014f && similarity2 > 0.99f;
+                      ok = ok && similarity1 < .83f && similarity2 > .82f;
                       return ok;
                   }()
                  );
+
+
+
+/*
+    NOTE: This file is auto-generated by generate.py from isprime.S.
+    Do not edit this file directly.
+*/
+
+// Only enable for GCC/Clang on x86-64 where this syntax is valid.
+#if defined(__GNUC__) && defined(__x86_64__)
+
+
+// The 'naked' attribute tells GCC not to generate a function prologue/epilogue,
+// as we provide it ourselves in the assembly code.
+__attribute__((naked))
+int is_prime(int n) {
+    // The 'volatile' keyword prevents the compiler from optimizing this block away.
+    __asm__ __volatile__(
+                ".intel_syntax noprefix\n\t"
+        "is_prime:\n\t"
+        "push rbp\n\t"
+        "mov rbp, rsp\n\t"
+        "mov DWORD PTR [rbp-4], edi        ; store n into local var\n\t"
+        "cmp DWORD PTR [rbp-4], 2\n\t"
+        "jl .not_prime\n\t"
+        "mov DWORD PTR [rbp-8], 2\n\t"
+        ".loop:\n\t"
+        "mov eax, DWORD PTR [rbp-8]        ; eax = i\n\t"
+        "imul eax, eax                     ; eax = i * i\n\t"
+        "cmp eax, DWORD PTR [rbp-4]        ; if (i*i > n) break\n\t"
+        "jg .is_prime\n\t"
+        "mov eax, DWORD PTR [rbp-4]        ; eax = n\n\t"
+        "xor edx, edx\n\t"
+        "mov ecx, DWORD PTR [rbp-8]        ; ecx = i\n\t"
+        "idiv ecx                          ; eax=n/i, edx=n%i\n\t"
+        "cmp edx, 0                        ; if (n % i == 0)\n\t"
+        "je .not_prime\n\t"
+        "add DWORD PTR [rbp-8], 1          ; i++\n\t"
+        "jmp .loop\n\t"
+        ".is_prime:\n\t"
+        "mov eax, 1                        ; return 1 (true)\n\t"
+        "pop rbp\n\t"
+        "ret\n\t"
+        ".not_prime:\n\t"
+        "mov eax, 0                        ; return 0 (false)\n\t"
+        "pop rbp\n\t"
+        "ret\n\t"
+        ".att_syntax prefix"
+    );
+}
+
+
+#endif // __GNUC__ && __x86_64__
+
+
+
+
+
+/****************************************/
+/*                     "Neural network" */
+/****************************************/
+
+
+
+
+
+
+
+
+
+/****************************************/
+/*                     "Neural network" */
+/****************************************/
+
+/****************************************/
+/*                                Tests */
+/****************************************/
+
+
+
+
+
+
+
+
+/****************************************/
+/*                             Research */
+/****************************************/
+/*
+    https://mohitmishra786.github.io/UnderTheHood/ <- lots of nn stuff!
+    https://www.jeremyong.com/cpp/machine-learning/2020/10/23/cpp-neural-network-in-a-weekend/
+    https://www.youtube.com/watch?v=AYuyN8vvkAM (not simd...)
+    https://www.youtube.com/watch?v=KphmOJnLAdI matrix math
+
+
+*/
 
 
 
@@ -910,7 +1098,7 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
 /****************************************/
 /*            outcome of a single round */
 /****************************************/
-    enum class Outcome { running, draw, fin, invalid };
+    enum class Outcome { running, draw, fin };
 
 
 /****************************************/
@@ -1147,7 +1335,7 @@ int shallowestTerminalDepth = 9999;
         for (int i=0; i<swapDst.activeBranches; ++i)
             swapDst.branches[i].parent = &swapDst;
 
-        #ifdef INCLUDEAI__PREVENT_ROOTNODES_FROM_GETTING_UPDATED_CORRECTLY
+        #ifdef INCLUDEAI__PREVENT_PARENT_NODES_FROM_GETTING_UPDATED_CORRECTLY
         #else
           swapSrc.activeBranches = Node<MoveType>::removed;
           swapSrc.moveHere       = removedMoveHere;
@@ -1224,7 +1412,7 @@ int shallowestTerminalDepth = 9999;
     constexpr SWORD MinimaxLose             =  -1;
     constexpr SWORD MinimaxInit             =  -2;
     // Both "undeterminable" and "indeterminable" are correct and can be used interchangeably in many
-    // contexts. However, "indeterminable" is more commonly used in formal or academic writing. (chatgpt)
+    // contexts. However, "indeterminable" is more commonly used in formal or academic writing. (ai)
     constexpr SWORD MinimaxIndeterminable99 = -99; // Debug
     constexpr SWORD MinimaxIndeterminable   =   0;
 
@@ -1296,6 +1484,20 @@ int shallowestTerminalDepth = 9999;
         MoveType best;
     };
 
+    template <GameMove MoveType>
+    class MCTS_Future
+    {
+    public:
+        bool have_result() const
+        {
+            return false;
+        }
+
+        MoveType getResult() const
+        {
+        }
+    };
+
 
 /****************************************/
 /*                                 mcts */
@@ -1309,7 +1511,7 @@ int shallowestTerminalDepth = 9999;
               typename AiCtx,
               typename Rndfunc
              >
-    constexpr auto mcts(const Board& boardOriginal, AiCtx& ai_ctx, Rndfunc rand)
+    constexpr MCTS_result<MoveType> mcts(const Board& boardOriginal, AiCtx& ai_ctx, Rndfunc rand)
     {
         [[maybe_unused]] auto UCBselectBranch =
             [](const Node<MoveType>& node) -> Node<MoveType> *
@@ -1330,8 +1532,8 @@ int shallowestTerminalDepth = 9999;
                     #if 0
                       const float exploit = std::abs(arm.score) / (arm.visits-0.f); // <- Not this
                     #endif
-                    constexpr float exploration_C = 1.414f; // useless
-                    constexpr float Hoeffdings_multiplier = 2.f; // (http://www.incompleteideas.net/609%20dropbox/other%20readings%20and%20resources/MCTS-survey.pdf)
+                    constexpr float exploration_C = 1.618f;// * 2; // useless?
+                    constexpr float Hoeffdings_multiplier = 1.f; //2.f; // (http://www.incompleteideas.net/609%20dropbox/other%20readings%20and%20resources/MCTS-survey.pdf)
                     const float explore = exploration_C * aiSqrt((Hoeffdings_multiplier * aiLog(node.visits)) / arm.visits);
                     /*
 
@@ -1422,7 +1624,7 @@ int shallowestTerminalDepth = 9999;
                 //aiAssert(selectedNode->branchScore == 0);
                 aiAssert(selectedNode->parent == parentOfSelected);
                 const MoveType moveHere = selectedNode->moveHere;
-                outcome = boardClone.doMove(moveHere);
+                [[maybe_unused]] const auto outcome = boardClone.doMove(moveHere);
                 boardClone.switchPlayer();
                 depth += 1;
                 if (outcome != Outcome::running)
@@ -1467,7 +1669,7 @@ int shallowestTerminalDepth = 9999;
                 if (selectedNode == root)
                     rootMovesRemaining = nValidMoves;
 
-                std::printf("np:%d, avl:%d \n", nodePos, nValidMoves);
+                //std::printf("np:%d, avl:%d \n", nodePos, nValidMoves);
 
                 if ((nodePos+nValidMoves) >= ai_ctx.numNodes) [[unlikely]] // This can happen at the end
                 {
@@ -1505,7 +1707,7 @@ int shallowestTerminalDepth = 9999;
                     [[maybe_unused]] const auto& unusedNode =
                         insertNodeIntoPool(ai_ctx, nodePos, selectedNode, move);
                 }
-                std::printf("\033[1;37mnew branch:%p brch:%p \033[0m \n", selectedNode-ai_ctx.nodePool, (&selectedNode->branches[0])-ai_ctx.nodePool);
+                //std::printf("\033[1;37mnew branch:%p brch:%p \033[0m \n", selectedNode-ai_ctx.nodePool, (&selectedNode->branches[0])-ai_ctx.nodePool);
                 for (int i=0; false && i<selectedNode->createdBranches; ++i) // todo put this loop into the assert
                 {
                     std::printf("\033[1;36m%p (%d) exp:%d mv:%d \033[0m \n", (&selectedNode->branches[i])-ai_ctx.nodePool, selectedNode->branches[i].moveHere, 0, selectedNode->branches[i].moveHere);
@@ -1675,8 +1877,6 @@ int shallowestTerminalDepth = 9999;
                     }
                     else
                     {
-                        //__builtin_trap(); // todo remove
-
                         child = parent;
                         aiAssert(parent != parent->parent);
                         parent = parent->parent; // Lolz
@@ -1708,26 +1908,18 @@ int shallowestTerminalDepth = 9999;
                       );
             #endif
 
-            float cur = 1.f;
-            //int yyy = fib(depth);
-
-            SWORD depthScore = 1;
-           // for (Node *tmp=selectedNode; tmp; ) { tmp=tmp->parent; branchDepth+=1; cur=cur+0.002f; }
-            std::printf("scre sel:%p score: %1.3f %d max:%d \n", selectedNode-ai_ctx.nodePool, score, iterations, MaxIterations);
-
-            int child_dp = 9999;
-
 
 
 
 
 
             // 5. Backprop/update tree:
+            int child_dpt = 9999;
             while (selectedNode != root)
             {
-                int dp_temp = selectedNode->shallowestTerminalDepth;
-                selectedNode->shallowestTerminalDepth = child_dp<dp_temp ? child_dp : dp_temp;
-                child_dp = dp_temp;
+                int dpt_temp = selectedNode->shallowestTerminalDepth;
+                selectedNode->shallowestTerminalDepth = child_dpt<dpt_temp ? child_dpt : dpt_temp;
+                child_dpt = dpt_temp;
 
                 //selectedNode->visits += 1.f ;//- ((cur-0.f)/(depth-0.f)); // Games that have more than two possible outcomes (example:
                 //selectedNode->visits += aiLog( 100 * ((cur-0.f)/(depth-0.f)) );
@@ -1741,7 +1933,7 @@ int shallowestTerminalDepth = 9999;
                     // how -interesting- a position is:
                     selectedNode->visits += 1;
                     selectedNode->score += score;
-                    depthScore += 1;
+
                     //depth += 1;
                     //selectedNode->weight += 1; //(fib(cur)-0.f) / (fib(depth)-0.f); //(aiLog(cur* 10)/2) / (depth-0.f); //((cur-0.f)/(depth-0.f)) ; weight
                 //    cur += 1.f;
@@ -1751,7 +1943,7 @@ int shallowestTerminalDepth = 9999;
                 }
                 depth -= 1;
 
-                std::printf("sel:%p score: %1.3f act:%d crt:%d  \n", selectedNode-ai_ctx.nodePool, selectedNode->score, selectedNode->activeBranches, selectedNode->createdBranches);
+                //std::printf("sel:%p score: %1.3f act:%d crt:%d  \n", selectedNode-ai_ctx.nodePool, selectedNode->score, selectedNode->activeBranches, selectedNode->createdBranches);
 
 
                 selectedNode = selectedNode->parent;
@@ -1761,7 +1953,7 @@ int shallowestTerminalDepth = 9999;
             }
         } // iterations
 
-        
+
         // This is the part NOT discussed in the AlphaZero paper (or ANY mcts paper for that matter):
         // What to do when terminal and non-terminal nodes appear in the tree mixed together????
         int shallowestTerminal = 9999;
@@ -1772,22 +1964,24 @@ int shallowestTerminalDepth = 9999;
                 shallowestTerminal = branch.shallowestTerminalDepth;
         }
 
-        if (shallowestTerminal != 9999)
-        {
-            for (int i=0; i < root->createdBranches; ++i)
-            {
-                Node<MoveType>& branch = root->branches[i];
-                if (branch.shallowestTerminalDepth == shallowestTerminal)
-                {
-                    if (branch.score > 0.f)
-                        continue;
-                }
-                else 
-                {
-                    branch.score = -999.f;
-                }
-            }
-        } // (shallowestTerminal != 9999)
+        #ifndef INCLUDEAI__DISABLE_DETECTION_OF_INSTANT_WIN
+          if (shallowestTerminal != 9999)
+          {
+              for (int i=0; i < root->createdBranches; ++i)
+              {
+                  Node<MoveType>& branch = root->branches[i];
+                  if (branch.shallowestTerminalDepth == shallowestTerminal)
+                  {
+                      if (branch.score > 0.f)
+                          continue;
+                  }
+                  else
+                  {
+                      branch.score = -1000.f; // -iters! Todo!!
+                  }
+              }
+          } // (shallowestTerminal != 9999)
+        #endif
 
         // Yes, scoring is complex!!!:
         auto bestScore = root->branches[0].score;
@@ -1807,7 +2001,7 @@ int shallowestTerminalDepth = 9999;
                 if (expectedVisits > root->branches[posScore].visits)
                     posScore = i;
             }
-    
+
             if (expectedVisits > bestVisits)
             {
                 bestVisits = expectedVisits;
@@ -1828,34 +2022,18 @@ int shallowestTerminalDepth = 9999;
 
 
 
-            unsigned char yavpos[11*11] =
-                    {0, 0,  0,  0,  0,  0,  0,  0,  0,  0, 0,
-                     0, 0,  0,  0,  0, 'a','b','c','d','e',0,
-                     0, 0,  0,  0, 'f','g','h','i','j','k',0,
-                     0, 0,  0, 'l','m','n','o','p','q','r',0,
-                     0, 0, 's','t','u','v','w','x','y','z',0,
-                     0,'A','B','C','D','E','F','G','H','I',0,
-                     0,'J','K','L','M','N','O','P','Q', 0, 0,
-                     0,'R','S','T','U','V','W','X', 0,  0, 0,
-                     0,'Y','Z','1','2','3','4', 0,  0,  0, 0,
-                     0,'5','6','7','8','9', 0,  0,  0,  0, 0,
-                     0, 0,  0,  0,  0,  0,  0,  0,  0,  0, 0
-                    };
-
-
 
             for (int i=0; i<root->createdBranches; ++i)
             {
-    
-                if (i==bestScore) std::printf("\033[1;36m");
-                std::printf("mv: %c %d  bs:%d   ", yavpos[root->branches[i].moveHere], root->branches[i].moveHere
-                           , root->branches[i].branchScore);
-                std::printf("s:%4.3f v:%d  dp: %d   act:%d  s/v:%2.3f v/s:%2.5f \033[0m \n", root->branches[i].score, root->branches[i].visits, root->branches[i].shallowestTerminalDepth, root->branches[i].activeBranches,
-                    root->branches[i].score/ root->branches[i].visits,root->branches[i].visits/root->branches[i].score);
+
+              //  if (i==bestScore) std::printf("\033[1;36m");
+                //std::printf("mv: %c %d  bs:%d   ", root->branches[i].moveHere, root->branches[i].moveHere, root->branches[i].branchScore);
+                // v/s == exploration E!
+                //std::printf("s:%4.3f v:%d  dp: %d   act:%d  s/v:%2.3f v/s:%2.5f \033[0m \n", root->branches[i].score, root->branches[i].visits, root->branches[i].shallowestTerminalDepth, root->branches[i].activeBranches, root->branches[i].score/ root->branches[i].visits,root->branches[i].visits/root->branches[i].score);
             }
             std::printf("threshold: %f mv: %d \033[1;31mcutoff: %d\033[0m ACT:%d maxPatternsim %f \n",
                           threshold, root->branches[posScore].moveHere, cutoffDepth, root->activeBranches, ai_ctx.maxPatternSimilarity);
-    
+
             mcts_result.statistics[MCTS_result<MoveType>::maxPatternSimilarity] = ai_ctx.maxPatternSimilarity*100;
             mcts_result.best = [root, posVisits, posScore, bestScore]
                                {
@@ -1865,6 +2043,35 @@ int shallowestTerminalDepth = 9999;
                                }();
             return mcts_result;
 
+    }
+
+    template <int MaxIterations,
+              int SimDepth,
+              int MinimaxDepth,
+              GameMove MoveType,
+              BitfieldIntType BitfieldType,
+              Gameview Board,
+              typename AiCtx,
+              typename Rndfunc
+             >
+    MCTS_Future<MoveType> mcts_async(const Board& boardOriginal, AiCtx& ai_ctx, Rndfunc rand)
+    {
+        // https://github.com/cdwfs/cds_sync/blob/master/cds_sync.h
+        using atomic = int;
+        static atomic rootMovesRemaining;
+        if (rootMovesRemaining == 0)
+        {
+            typename Board::StorageForMoves storageForMoves;
+            Board boardClone = boardOriginal.clone();
+            rootMovesRemaining = boardClone.generateMovesAndGetCnt(storageForMoves);
+        }
+        while (rootMovesRemaining)
+        {
+            typename Board::StorageForMoves storageForMoves;
+            Board boardClone = boardOriginal.clone();
+          //  ??? = boardClone.generateMovesAndGetCnt(storageForMoves);
+            // rootMovesRemaining -= 1;
+        }
     }
 
 
@@ -1914,10 +2121,6 @@ int shallowestTerminalDepth = 9999;
 
         constexpr include_ai::Outcome doMove(const TicTacTest::Move mv)
         {
-            // checking if valid input only needed when running on a server:
-            if (pos[mv]) [[unlikely]]
-                return include_ai::Outcome::invalid; // <- Therefore this is for demo only!
-
             pos[mv] = currentPlayer;
             int win = pos[0] && (pos[0]==pos[1]) && (pos[0]==pos[2]);
             win += pos[3] && (pos[3]==pos[4]) && (pos[3]==pos[5]);

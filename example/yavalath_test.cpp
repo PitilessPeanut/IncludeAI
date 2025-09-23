@@ -25,7 +25,7 @@ public:
     static constexpr int CELLS = 61;
     using YavMove = int;
     using StorageForMoves = YavMove[CELLS];
-    unsigned char board[11*11] =
+    static constexpr unsigned char boardTemplate[11*11] =
         {0, 0,  0,  0,  0,  0,  0,  0,  0,  0, 0,
          0, 0,  0,  0,  0, 'a','b','c','d','e',0,
          0, 0,  0,  0, 'f','g','h','i','j','k',0,
@@ -38,6 +38,7 @@ public:
          0,'5','6','7','8','9', 0,  0,  0,  0, 0,
          0, 0,  0,  0,  0,  0,  0,  0,  0,  0, 0
         };
+    unsigned char board[11*11];
 private:
     int currentPlayer = 1, winner;
     Pattern<CELLS+CELLS> patternInputs;
@@ -45,7 +46,7 @@ private:
 public:
     std::bitset<128> openpos;
 public:
-    constexpr YavalathBoard() {}
+    constexpr YavalathBoard() { std::copy(std::begin(boardTemplate), std::end(boardTemplate), std::begin(board)); }
     YavalathBoard(const YavalathBoard&) = delete;
     YavalathBoard& operator=(const YavalathBoard&) = delete;
     YavalathBoard(YavalathBoard&&) = default;
@@ -189,7 +190,13 @@ public:
         return &patternInputs;
     }
 
-    void reset() {}
+    constexpr void reset()
+    {
+        std::copy(std::begin(boardTemplate), std::end(boardTemplate), std::begin(board));
+        currentPlayer = 1;
+        winner = 0;
+        openpos.reset();
+    }
 };
 
 
@@ -226,11 +233,12 @@ struct YavalathAiMCTS : YavalathPlayerBase
         if (fresh)
         {
             fresh = false;
-            return pcgRand<UDWORD>() % 121;
+            constexpr int offsets[] = {-33,-30,-22,-21,-20,-12,-11,-10,-9, -3,-2,-1, 1,2,3, 9,10,11,12,20,21,22,30,33};
+            return (121/2) + offsets[pcgRand<UDWORD>() % 24];
         }
         constexpr int simDepth=21, minimaxDepth=3;
         const MCTS_result<YavalathBoard::YavMove> res =
-            mcts<1800, simDepth, minimaxDepth, YavalathBoard::YavMove, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
+            mcts<4800, simDepth, minimaxDepth, YavalathBoard::YavMove, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
         std::printf("simulations: %d, minimaxes: %d \n", res.statistics[MCTS_result<YavalathBoard::YavMove>::simulations], res.statistics[MCTS_result<YavalathBoard::YavMove>::minimaxes]);
         return res.best;
     }
