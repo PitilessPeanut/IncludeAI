@@ -7,55 +7,61 @@
 /****************************************/
 /*                           Bit vector */
 /****************************************/
-    template <class Int, int Charbits=CHARBITS>
+    template <class Int, int Size, int Charbits=CHARBITS>
     class Bitvec
     {
-    public:
-        using type = Int;
     private:
-        Int *bitvec;
         static constexpr Int w = sizeof(Int)*Charbits;
         static constexpr Int shift = []{ Int p=0, b=sizeof(Int)*Charbits; while (b>>=1) p++; return p; }();
-        const int size;
+        static constexpr int N_INTS = (Size + w - 1) / w;
+        Int mem[N_INTS] = {};
     public:
-        explicit constexpr Bitvec(Int *mem, const int nBits)
-          : bitvec(mem)
-          , size(nBits)
-        {}
+        constexpr Bitvec() = default;
 
-        explicit constexpr Bitvec(const Int *mem, const int nBits)
-          : bitvec(mem)
-          , size(nBits)
-        {}
-        
-        constexpr bool operator==(const Bitvec<Int, Charbits>& rhs) const
+        constexpr Bitvec(const Bitvec& other) = default;
+
+        constexpr Bitvec& operator=(const Bitvec& rhs)
         {
-            bool same = true;
-            const auto nInts = size / (sizeof(Int) * Charbits);
-            for (int i=0; i<nInts; ++i)
-                same = same && (bitvec[i] == rhs.bitvec[i]);
-            if (!same)
+            if (this == &rhs)
+                return *this;
+            for (int i=0; i<N_INTS; ++i)
+                mem[i] = rhs.mem[i];
+            return *this;
+        }
+
+        constexpr bool operator==(const Bitvec& rhs) const
+        {
+            int same = 0;
+            for (int i=0; i<(N_INTS-1); ++i)
+                same += mem[i] == rhs.mem[i];
+            if (same != (N_INTS-1))
                 return false;
 
-            const auto remainingBits = size - (nInts * sizeof(Int) * Charbits);
-            Int mask = ~0;
-            mask <<= remainingBits;
-            mask = ~mask;
-            return (bitvec[nInts]&mask) == (rhs.bitvec[nInts]&mask);
+            constexpr int remainingBits = Size % w;
+            if constexpr (remainingBits == 0)
+            {
+                return mem[N_INTS - 1] == rhs.mem[N_INTS - 1];
+            }
+            else
+            {
+                constexpr Int mask = (Int(1) << remainingBits) - 1;
+                return (mem[N_INTS-1] & mask) == (rhs.mem[N_INTS-1] & mask);
+            }
         }
 
         constexpr void set(const int pos)
         {
-            Int bit = 1;
-            bit <<= pos&(w-1);
-            bitvec[pos>>shift] |= bit;
+            const Int bit = Int(1) << (pos&(w-1));
+            mem[pos>>shift] |= bit;
         }
 
         constexpr void set(const int pos, const bool val)
         {
-            Int bit = val;
-            bit <<= pos&(w-1);
-            bitvec[pos>>shift] |= bit;
+            const Int mask = Int(1) << (pos&(w-1));
+            if (val)
+                mem[pos>>shift] |= mask;
+            else
+                mem[pos>>shift] &= ~mask;
         }
 
         constexpr void setRange(const int startInclusive, const int endInclusive)
@@ -72,21 +78,20 @@
             const Int bitsOverlap = bitsStart & bitsEnd;
             const bool overlap = (startPos==endPos) && bitsOverlap;
 
-            bitvec[startPos] |= (bitsStart * !overlap);
+            mem[startPos] |= (bitsStart * !overlap);
 
             const int middlePos = endPos - 1;
             constexpr Int allSet = ~0;
             for (startPos+=1; startPos <= middlePos; ++startPos)
-                bitvec[startPos] = allSet;
+                mem[startPos] = allSet;
 
-            bitvec[endPos] |= (bitsEnd * !overlap) + (bitsOverlap * overlap);
+            mem[endPos] |= (bitsEnd * !overlap) + (bitsOverlap * overlap);
         }
 
         constexpr void clear(const int pos)
         {
-            Int bit = 1;
-            bit <<= pos&(w-1);
-            bitvec[pos>>shift] &= ~bit;
+            const Int bit = Int(1) << (pos&(w-1));
+            mem[pos>>shift] &= ~bit;
         }
 
         constexpr void clearRange(const int startInclusive, const int endInclusive)
@@ -103,25 +108,24 @@
             const Int bitsOverlap = bitsStart & bitsEnd;
             const bool overlap = (startPos==endPos) && bitsOverlap;
 
-            bitvec[startPos] &= ~(bitsStart * !overlap);
+            mem[startPos] &= ~(bitsStart * !overlap);
 
             const int middlePos = endPos - 1;
             for (startPos+=1; startPos <= middlePos; ++startPos)
-                bitvec[startPos] = 0;
+                mem[startPos] = 0;
 
-            bitvec[endPos] &= ~((bitsEnd * !overlap) + (bitsOverlap * overlap));
+            mem[endPos] &= ~((bitsEnd * !overlap) + (bitsOverlap * overlap));
         }
 
         constexpr void clearAll()
         {
-            auto nInts = size / (sizeof(Int) * Charbits);
-            for (decltype(nInts) i=0; i<nInts; ++i)
-                bitvec[i] = 0;
+            for (int i=0; i<N_INTS; ++i)
+                mem[i] = 0;
         }
 
         constexpr Int check(const int pos) const
         {
-            const Int bit = bitvec[pos>>shift];
+            const Int bit = mem[pos>>shift];
             return (bit >> (pos&(w-1))) & 1;
         }
 
@@ -137,20 +141,20 @@
             const Int maskOverlap = maskA & maskB;
             const bool overlap = (startPos==endPos) && maskOverlap;
 
-            bool identical = (bitvec[startPos]&maskA) == maskA;
+            bool identical = (mem[startPos]&maskA) == maskA;
 
             const int middlePos = endPos - 1;
             constexpr Int allSet = ~0;
             for (startPos+=1; startPos <= middlePos; ++startPos)
             {
-                identical = identical && ((bitvec[startPos] & allSet) == allSet);
+                identical = identical && ((mem[startPos] & allSet) == allSet);
                 const int isNotIdentical = !identical;
                 startPos += middlePos & -isNotIdentical;
             }
 
-            identical = identical && ((bitvec[endPos] & maskB) == maskB);
+            identical = identical && ((mem[endPos] & maskB) == maskB);
 
-            identical = identical || (overlap && ((bitvec[endPos] & maskOverlap) == maskOverlap));
+            identical = identical || (overlap && ((mem[endPos] & maskOverlap) == maskOverlap));
 
             return (Int)identical;
         }
@@ -160,15 +164,54 @@
             return check(pos);
         }
 
-        Int popcnt() const
+        template <bool Comptime=false>
+        constexpr Int popcnt() const
         {
             Int cnt = 0;
-            auto nInts = size / (sizeof(Int) * Charbits);
-            for (decltype(nInts) i=0; i<nInts; ++i)
-                if constexpr (sizeof(Int) == sizeof(UQWORD))
-                    cnt += __builtin_popcountll( bitvec[i] );
+            for (int i=0; i<(N_INTS-1); ++i)
+            {
+                Int val = mem[i];
+                if constexpr (Comptime)
+                {
+                    while (val)
+                    {
+                        cnt += val & 1;
+                        val >>= 1;
+                    }
+                }
                 else
-                    cnt += __builtin_popcount( bitvec[i] );
+                {
+                    if constexpr (sizeof(Int) == sizeof(UQWORD))
+                        cnt += __builtin_popcountll( val );
+                    else
+                        cnt += __builtin_popcount( val );
+                }
+            }
+
+            // Remaining bits:
+            constexpr int remainingBits = Size % w;
+            Int last_val = mem[N_INTS-1];
+            if constexpr (remainingBits != 0)
+            {
+                constexpr Int mask = (Int(1) << remainingBits) - 1;
+                last_val &= mask;
+            }
+
+            if constexpr (Comptime)
+            {
+                while (last_val)
+                {
+                    cnt += last_val & 1;
+                    last_val >>= 1;
+                }
+            }
+            else
+            {
+                if constexpr (sizeof(Int) == sizeof(UQWORD))
+                    cnt += __builtin_popcountll( last_val );
+                else
+                    cnt += __builtin_popcount( last_val );
+            }
             return cnt;
         }
     };

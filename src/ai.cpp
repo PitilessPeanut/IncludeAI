@@ -28,7 +28,7 @@
             return dst;
         }
 
-        constexpr int generateMovesAndGetCnt(TicTacTest::Move *availMoves)
+        constexpr int generateMovesAndGetCnt(TicTacTest::Move *availMoves) const
         {
             int availMovesCtr = 0;
             for (int i=0; i<9; ++i)

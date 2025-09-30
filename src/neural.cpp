@@ -5,7 +5,7 @@
   #include <arm_neon.h>
 #elif defined(__wasm_simd128__)
   #include <wasm_simd128.h>
-#else // not "x86_64" etc.
+#else // not "__AVX__" etc.
   #error "unknown arch"
 #endif // unknown
 

@@ -267,7 +267,7 @@ merge_result += """#include <cmath>
 #elif defined(__wasm_simd128__)
   #include <wasm_simd128.h>
 #else
-  #error "unknown arch! (use '-msimd128' to fix)"
+  #error "unknown arch! (if compiling for wasm use '-msimd128' to fix)"
 #endif\n\n
 namespace include_ai {\n\n\n
 """

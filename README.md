@@ -31,20 +31,20 @@ Not necessary, just copying 'includeai.hpp' into your project should be enough. 
 
 ### How to use
 Create an `Ai_ctx` object. This object stores the entire ai memory and can be rather large. For example, during testing the game Yavalath more than 90000 nodes are required. With less, due to early exhausted memory, the stopping condition may be triggered before all iterations are completed, potentially resulting in lower-quality outcomes. Finding the right number of nodes for your use-case requires careful testing and calibration.
-The template parameters for Ai_ctx are `<int NumNodes, GameMove MoveType, BitfieldMemoryType BitfieldType, class Pattern, int MaxPatterns>`. If you decide to store your moves/actions as a uint64_t and your bitfield type is also uint64_t, the size of the Ai_ctx object could be something like `(NumNodes * sizeof(Node<uint64_t>)) + ((NumNodes/64) * sizeof(uint64_t)) + (MaxPatterns * sizeof(Pattern))`. Hope thats clear... Other than putting it somewhere into memory there is nothing you need to do with Ai_ctx. Theoretically a single Ai_ctx object can be resued for multiple AI players since it does not store game state. However, if AI players play concurrently, as opposed to taking turns, then each one needs their own Ai_ctx to avoid cuncurrency issues. It really doesn't matter when and where you create and place the Ai_ctx object as it contains only the memory used during a call to `mcts`. However, since it is pretty large I recommend you reuse it as much as possible. During training, unlike during normal play, the Ai_ctx must persist until training is complete. This may strech accross many games. In games with hidden information (Poker/Starcraft/etc.) you must pay attention to pass the correct `Gameview` for each player when calling `mcts`, since those might differ from one player to another. 
+The template parameters for Ai_ctx are `<int NumNodes, GameMove MoveType, BitfieldMemoryType BitfieldType, class Pattern, int MaxPatterns>`. If you decide to store your moves/actions as a uint64_t and your bitfield type is also uint64_t, the size of the Ai_ctx object could be something like `(NumNodes * sizeof(Node<uint64_t>)) + ((NumNodes/64) * sizeof(uint64_t)) + (MaxPatterns * sizeof(Pattern))`. Hope thats clear... Other than putting it somewhere into memory there is nothing you need to do with Ai_ctx. Theoretically a single Ai_ctx object can be resued for multiple AI players since it does not store game state. However, if AI players play concurrently, as opposed to taking turns, then each one needs their own Ai_ctx to avoid cuncurrency issues. It really doesn't matter when and where you create and place the Ai_ctx object as it contains only the memory used during a call to `mcts`. However, since it is pretty large I recommend you reuse it as much as possible. During training, unlike during normal play, the Ai_ctx must persist until training is complete. This may strech accross many games. In games with hidden information (Poker/Starcraft/etc.) you must pay attention to pass the correct `Gameview` for each player when calling `mcts`, since those might differ from one player to another.
 Calling `mcts<Iterations, Max simulation depth, Minimax depth, Move type, Bitfield Int type>(Gameworld/board/view, Ai_ctx, random number functor)` will return a `MCTS_result`. Accessing `MCTS_result.best` will give you the ai's favorite move for the given board position, the type of which will be your `Move` type. For example if you `mcts<500, 10, 5, unsigned int, ...` your `MCTS_result.best` will be an 'unsigned int'.
 
 ### WASM support
 It should work. See how to include above^, compile with SIMD enabled: `em++ mygame.cpp -o mygame.js -s WASM=1 -msimd128`
 
 ### About Trap States
-Trap states can happen even after all branches of a node were fully explored. In fact, it can even happen after the entire tree has been fully explored! Therefore, trying to force the search to explore all possible child branches of a node is not only not going to work, but may lead to the tree becoming excessively shallow, or "near-sighted" in addition of failing to detect traps, also missing out on more complex strategies at a deeper level! The real reason traps happen is because the "random rollout" simulation terminates (on avarage!) too early when it discovers a winning node even if that winning position can easily be negated by the opposing player, resulting in the simulation providing (on avarage!) the wrong result. Even running a high number of simulations is not going to work if, on avarage, the simulations terminate on the wrong outcome. Upon closer investigation we can observe that _trap states are not a problem but a symptom. The real problem is incorrect branch selection!_ The root cause is a fundamentally false assumtion about the result of random rollouts. For example, if there are three loss states and one win state attached to a root node, the rollout selection will score .25, leading to the branch being discarded, even when this would be the only branch with a possible winning move. The reason for this is that a random rollout does not take *depth* into account when calculating the final score! This can easily be demonstrated by relpacing the random rollout function with a lookup table. We can conclude that random rollout functions, as shown in the AlphaZero research paper, and regardless of how many times they are being run, can not be used as a reliable heuristic for branch score estimation.
-Unfortunately this issue seems unsolvable unless you have an iq of 150+ (which I don't claim to have...). If the *simulation* part could yield a clear result (win/loss) then the ai could play perfectly. However, in such a case we might as well replace the entire search tree with a simple minimax since we would no longer be dealing with a probabilistic search! Instead we approach this problem by splitting the simulation part into three pieces:  
-1st: minimax up to a predefined depth  
-2nd: if that fails: value network estimation  
-3rd: if estimations vague or uncertain: random rollout (yolo)  
-With this approach we have effectively eliminated the *shallow trap* problem for the vast majority of cases, assuming enough resources have been made available to complete the search:  
- Shown here is an example for the game Yavalath:  
+Trap states can happen even after all branches of a node were fully explored. In fact, it can even happen after the entire tree has been fully explored (for example in TicTacToe). Therefore, trying to force the search to explore all possible child branches of a node is not only not going to work, but may lead to the tree becoming excessively shallow, or "near-sighted" in addition of failing to detect traps, also missing out on more complex strategies at a deeper level! The real reason traps happen is because the "random rollout" simulation terminates (on avarage!) too early when it discovers a winning node even if that winning position can easily be negated by the opposing player, resulting in the simulation providing (on avarage!) the wrong result. Even running a high number of simulations is not going to work if the simulations tend towards terminating on the wrong outcome. Upon closer investigation we can observe that _trap states are not a problem but a symptom. The real problem is incorrect branch selection!_ The root cause is a fundamentally false assumtion about the result of random rollouts. For example, if there are three loss states and one win state attached to a root node, the rollout selection will score .25, leading to the branch being discarded, even when this would be the only branch with a possible winning move. The reason for this is that a random rollout does not take *depth* into account when calculating the final score! This can easily be demonstrated by relpacing the random rollout function with a lookup table. We can conclude that random rollout functions, as shown in the AlphaZero research paper, and regardless of how many times they are being run, can not be used as a reliable heuristic for branch score estimation.
+One mitigation would be to attach weights to branches, giving lower weights for branches at a deeper level. For this to work however, you would need to know the total maximum depth of the game tree (in advance) to attach relative weight, which is impossible in most cases. However, if the *simulation* part could yield a clear result (win/loss) then the ai could play perfectly. But in such a case we might as well replace the entire search tree with a simple minimax since we would no longer be dealing with a probabilistic search! Instead we approach this problem by splitting the simulation part into three pieces:
+1st: minimax up to a predefined depth
+2nd: if that fails: value network estimation
+3rd: if estimations vague or uncertain: random rollout (yolo)
+With this approach we have effectively eliminated the *shallow trap* problem for the vast majority of cases, assuming enough resources have been made available to complete the search:
+ Shown here is an example for the game Yavalath:
 ```
 // a = ai
 // p = player
@@ -56,11 +56,11 @@ MCTS_result mcts_res = mcts<350, 21, 3, YavalathBoard::YavMove, UQWORD>(view, ai
 
     . . . . .                        . . . . .                         . . . . .
    . . . a . .                      . . . a . .                       . . . a . .
-  . . . p p . a                    . X . p p . a   <- move the ai    . . . p p . a 
- . . . . . . . .                  . . . . . . . .     should have   . . . . . . . . 
-. . . p . a p . .                . . . p . a p . .    made!        . . . p . a p . . 
+  . . . p p . a                    . X . p p . a   <- move the ai    . . . p p . a
+ . . . . . . . .                  . . . . . . . .     should have   . . . . . . . .
+. . . p . a p . .                . . . p . a p . .    made!        . . . p . a p . .
  . . . X . p . .  <- player       . . . p . p . .                   . . . p . p . .
-  . . . . . . .      moved here    . . . . . . .                     . . . . . . . 
+  . . . . . . .      moved here    . . . . . . .                     . . . . . . .
    a a p a . .                      a a p a . .                        a a p a . .
     . . . . .                        . . . . .                          X . . . .    <- the move the
                                                                                         ai actually made
@@ -71,19 +71,19 @@ Improved version:
 Ai_ctx<100000, YavalathBoard::YavMove, unsigned int, PatternType, MaxPatterns> ai_ctx;
 MCTS_result mcts_res = mcts<1000, 21, 3, YavalathBoard::YavMove, UQWORD>(view, ai_ctx, randFn);
 
-    . . . . .                          . . . . .                     
-   . . . . . .                        . . . . . .                      
+    . . . . .                          . . . . .
+   . . . . . .                        . . . . . .
   . . . p p . a                      . X . p p . a    <- Ai successfully prevented
  . . . a . . . .                    . . . a . . . .      possible losing position!
-. . . p . a p . .                  . . . p . a p . .      
- . . . X . p . .  <- last move by   . . . p . p . .                 
-  . . . . . . .      player          . . . . . . .                    
-   a a p a . .                        a a p a . .                     
-    . . . . .                          . . . . .                        
-                                                                                       
+. . . p . a p . .                  . . . p . a p . .
+ . . . X . p . .  <- last move by   . . . p . p . .
+  . . . . . . .      player          . . . . . . .
+   a a p a . .                        a a p a . .
+    . . . . .                          . . . . .
+
 ```
-Some initial tests suggest that past a number of iterations of about 8-9000 (and ~600000+ nodes), the AI becomes effectively undefeatable (in Yavalath!). These numbers may vary depending on your game/usecase/etc.  
-**The key idea is to push any trap state to a depth beyond the search "horizon", thereby reducing the likelihood of its selection to 0%! **[^2]  
+Some initial tests suggest that past a number of iterations of about 8-9000 (and ~600000+ nodes), the AI becomes effectively undefeatable (in Yavalath!). These numbers may vary depending on your game/usecase/etc.
+**The key idea is to push any trap state to a depth beyond the search "horizon", thereby reducing the likelihood of its selection to 0%! **[^2]
 
 
 ### Neural Network implementation

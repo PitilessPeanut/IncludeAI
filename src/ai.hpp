@@ -83,7 +83,7 @@ namespace include_ai {
         requires (T obj, const T cobj)
         {
             {cobj.clone()} -> std::same_as<T>;
-            {obj.generateMovesAndGetCnt(nullptr)} -> std::convertible_to<int>;
+            {cobj.generateMovesAndGetCnt(nullptr)} -> std::convertible_to<int>;
             {obj.doMove(int())} -> std::same_as<Outcome>;
             {obj.switchPlayer()};
             {cobj.getCurrentPlayer()} -> std::equality_comparable;
