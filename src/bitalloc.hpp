@@ -143,9 +143,6 @@
 
                             if (avail)
                             {
-                                for (int i=0; i<bucketsRequired; ++i)
-                                    bucketPool[bucketNo+i] = everyBitSet;
-
                                 if (remainingBits > 0)
                                 {
                                     const BitfieldType mask = everyBitSet << (Intbits - remainingBits);
@@ -153,11 +150,13 @@
                                     if ((bucketPool[bucketNo+bucketsRequired]&mask) == 0)
                                     {
                                         bucketPool[bucketNo+bucketsRequired] |= mask;
-                                       // break;
                                     }
-                                    //else
-                                    //    break;
+                                    else
+                                        break;
                                 }
+
+                                for (int i=0; i<bucketsRequired; ++i)
+                                    bucketPool[bucketNo+i] = everyBitSet;
 
                                 return Pos{ .posOfAvailChunk = static_cast<int>(bucketNo*Intbits),
                                             .length = static_cast<int>(discoveredSize)

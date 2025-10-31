@@ -57,10 +57,26 @@
 
     static_assert([]
                   {
-                      Bitvec<UQWORD, 128, CHARBITS> a;
+                      Bitvec<UQWORD, 128, CHARBITS> a,b;
                       a.set(64);
-                      Bitvec<UQWORD, 128, CHARBITS> b;
                       b = a;
                       return b.check(64);
+                  }()
+                 );
+
+    static_assert([]
+                  {
+                      Bitvec<UQWORD, 128, CHARBITS> a,b,c;
+                      a.set(64);
+                      c = a | b;
+                      return c.check(64);
+                  }()
+                 );
+
+    static_assert([]
+                  {
+                      Bitvec<UDWORD, 64> a;
+                      a[33] = 1;
+                      return a.check(33);
                   }()
                  );

@@ -71,15 +71,9 @@
 
         constexpr int getWinner() const { return winner; }
 
-        float *getNetworkInputs()
-        {
-            for (int i=0; i<9; ++i)
-            {
-                neuralInputs[i  ] = pos[i] == currentPlayer;
-                neuralInputs[i+9] = pos[i] != currentPlayer;
-            }
-            return neuralInputs;
-        }
+        constexpr float *getNetworkInputs() { return &neuralInputs[0]; }
+
+        constexpr void randomize() {}
     };
 
     static_assert([]
@@ -232,5 +226,3 @@
 
     todo: http://www.incompleteideas.net/609%20dropbox/other%20readings%20and%20resources/MCTS-survey.pdf
 */
-
-/* Whatever we conceive well we express clearly, and words flow with ease. (Nicolas Boileau-Despreaux) */

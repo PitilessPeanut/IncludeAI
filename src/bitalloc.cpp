@@ -105,8 +105,10 @@
                       testAllocator1.free(1, 191);
                       testAllocator1.free(0, 1);
                       bool ok = testAllocator1.bucketPool[0] == 0;
+                      ok = ok && (testAllocator1.bucketPool[0]+testAllocator1.bucketPool[1]+testAllocator1.bucketPool[2]) == 0;
+                      ok = ok && testAllocator1.bucketPool[3] == 0xffffffffffffffff;
                       auto pos1 = testAllocator1.largestAvailChunk(257);
-                      ok = ok && pos1.posOfAvailChunk==0 && pos1.length==255; // Max size
+                      ok = ok && pos1.posOfAvailChunk==0 && pos1.length==192; // Last bucket already full
                       testAllocator1.free(64, 3);
                       ok = ok && testAllocator1.bucketPool[1] == 0b0001111111111111111111111111111111111111111111111111111111111111;
                       testAllocator1.free(0, 64);
@@ -182,10 +184,10 @@
                       testAlloc.free(8, 8);
                       bool ok = testAlloc.bucketPool[0] == 0xff;
                       ok = ok && testAlloc.bucketPool[1] == 0b00000000;
-                     // ok = ok && testAlloc.bucketPool[2] == 0b10000000;
+                      ok = ok && testAlloc.bucketPool[2] == 0b10000000;
                       const auto pos = testAlloc.largestAvailChunk(10); // not enough space anywhere
                       ok = ok && testAlloc.bucketPool[1] == 0b11111111; // 8 of ten placed here
-                      ok = ok && pos.posOfAvailChunk==8 ; //&& pos.length==8;
+                      ok = ok && pos.posOfAvailChunk==8 && pos.length==8; // This check is critical!
                       ok = ok && testAlloc.bucketPool[2] == 0b10000000; // This one should remain unchanged in the BitAlloc_Mode::FAST mode.
                                                                         // In TIGHT mode, it would have been 0b11111111 with 7 bits placed here
                       ok = ok && testAlloc.bucketPool[3] == 0;          // and the remaining 3 bits placed here

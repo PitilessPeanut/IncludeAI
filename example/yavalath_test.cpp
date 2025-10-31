@@ -23,8 +23,8 @@ class YavalathBoard
 {
 public:
     static constexpr int CELLS = 61;
-    using YavMove = int;
-    using StorageForMoves = YavMove[CELLS];
+    using Move = int;
+    using StorageForMoves = Move[CELLS];
     static constexpr unsigned char boardTemplate[11*11] =
         {0, 0,  0,  0,  0,  0,  0,  0,  0,  0, 0,
          0, 0,  0,  0,  0, 'a','b','c','d','e',0,
@@ -63,7 +63,7 @@ public:
         return dst;
     }
 
-    int generateMovesAndGetCnt(YavMove *availMoves)
+    int generateMovesAndGetCnt(Move *availMoves) const
     {
         int availMovesCtr = 0;
         for (int i=15; i<(11*11); ++i)
@@ -77,7 +77,7 @@ public:
         return availMovesCtr;
     }
 
-    Outcome doMove(const YavMove mv)
+    Outcome doMove(const Move mv)
     {
         const unsigned char currentId = currentPlayer+248;
         board[mv] = currentId;
@@ -203,7 +203,7 @@ public:
 struct YavalathPlayerBase
 {
     virtual char readInput() const = 0;
-    virtual YavalathBoard::YavMove selectMove(const YavalathBoard&, const int) = 0;
+    virtual YavalathBoard::Move selectMove(const YavalathBoard&, const int) = 0;
     virtual ~YavalathPlayerBase() = default;
 };
 
@@ -211,24 +211,22 @@ struct YavalathPlayer : YavalathPlayerBase
 {
     char readInput() const override { return input_scan2(nullptr); }
 
-    YavalathBoard::YavMove selectMove([[maybe_unused]] const YavalathBoard& original, [[maybe_unused]] const int input) override
+    YavalathBoard::Move selectMove([[maybe_unused]] const YavalathBoard& original, [[maybe_unused]] const int input) override
     {
         for (int i=15; i<(11*11); ++i)
             if (original.board[i] == input)
-                return YavalathBoard::YavMove{i};
+                return YavalathBoard::Move{i};
     }
 };
 
 struct YavalathAiMCTS : YavalathPlayerBase
 {
     bool fresh = true;
-    using PatternType = Pattern<2*YavalathBoard::CELLS>;
-    static constexpr int MaxPatterns = 60;
-    Ai_ctx<210000, YavalathBoard::YavMove, UQWORD, PatternType, MaxPatterns> ai_ctx;
+    Ai_ctx<210000, YavalathBoard::Move, UQWORD> ai_ctx;
 
     char readInput() const override { return '\0'; /* this does nothing */ }
 
-    YavalathBoard::YavMove selectMove([[maybe_unused]] const YavalathBoard& original, [[maybe_unused]] const int input) override
+    YavalathBoard::Move selectMove([[maybe_unused]] const YavalathBoard& original, [[maybe_unused]] const int input) override
     {
         if (fresh)
         {
@@ -237,9 +235,9 @@ struct YavalathAiMCTS : YavalathPlayerBase
             return (121/2) + offsets[pcgRand<UDWORD>() % 24];
         }
         constexpr int simDepth=21, minimaxDepth=3;
-        const MCTS_result<YavalathBoard::YavMove> res =
-            mcts<4800, simDepth, minimaxDepth, YavalathBoard::YavMove, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
-        std::printf("simulations: %d, minimaxes: %d \n", res.statistics[MCTS_result<YavalathBoard::YavMove>::simulations], res.statistics[MCTS_result<YavalathBoard::YavMove>::minimaxes]);
+        const MCTS_result<YavalathBoard::Move> res =
+            mcts<4800, simDepth, minimaxDepth, YavalathBoard::Move, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
+        std::printf("simulations: %d, minimaxes: %d \n", res.statistics[MCTS_result<YavalathBoard::Move>::simulations], res.statistics[MCTS_result<YavalathBoard::Move>::minimaxes]);
         return res.best;
     }
 };
@@ -274,14 +272,14 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[])
                 const int currentPlayer = yavalathBoard.getCurrentPlayer();
                 std::printf("player %d - score: %d %d - rnd: %d\n", currentPlayer, scores[1], scores[2], tests);
                 [[maybe_unused]] const char sel = players[currentPlayer]->readInput();
-                const YavalathBoard::YavMove mv = players[currentPlayer]->selectMove(yavalathBoard, sel);
+                const YavalathBoard::Move mv = players[currentPlayer]->selectMove(yavalathBoard, sel);
                 running = yavalathBoard.doMove(mv);
-                if (running == Outcome::invalid)
-                {
-                    std::printf("invalid move: %d \n", mv);
-                    continue;
-                }
-                else if (running == Outcome::fin)
+                //if (running == Outcome::invalid)
+                //{
+                //    std::printf("invalid move: %d \n", mv);
+                //    continue;
+                //}
+                if (running == Outcome::fin)
                 {
                     const auto w = yavalathBoard.getWinner();
                     scores[w] += 1;
@@ -295,13 +293,13 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[])
 
                 if (tests < 300)
                 {
-                    ai[0].ai_ctx.collectPattern(yavalathBoard);
-                    ai[1].ai_ctx.collectPattern(yavalathBoard);
+                   // ai[0].ai_ctx.collectPattern(yavalathBoard);
+                   // ai[1].ai_ctx.collectPattern(yavalathBoard);
                 }
                 else
                 {
-                    ai[0].ai_ctx.train(yavalathBoard);
-                    ai[1].ai_ctx.train(yavalathBoard);
+                   // ai[0].ai_ctx.train(yavalathBoard);
+                   // ai[1].ai_ctx.train(yavalathBoard);
                 }
             } // close scope before 'goto' label
 

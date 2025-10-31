@@ -43,7 +43,7 @@ public:
         return dst;
     }
 
-    int generateMovesAndGetCnt(Move *availMoves)
+    int generateMovesAndGetCnt(Move *availMoves) const
     {
         int availMovesCtr = 0;
         for (int i=0; i<9; ++i)
@@ -58,7 +58,7 @@ public:
 
     Outcome doMove(const Move mv)
     {
-        if (pos[mv]) return Outcome::invalid;
+        //if (pos[mv]) return Outcome::invalid;
         turn += 1;
         pos[mv] = currentPlayer;
 
@@ -87,6 +87,8 @@ public:
     int getCurrentPlayer() const { return currentPlayer; }
 
     int getWinner() const { return winner; }
+
+    void randomize() {}
 
     void reset()
     {
@@ -117,9 +119,7 @@ struct TicTacPlayer : TicTacPlayerBase
 
 struct TicTacAiMCTS : TicTacPlayerBase
 {
-    using PatternType = Pattern<9+9>;
-    static constexpr int MaxPatterns = 9*9;
-    Ai_ctx<13000, TicTacBoard::Move, UQWORD, PatternType, MaxPatterns> ai_ctx;
+    Ai_ctx<13000, TicTacBoard::Move, UQWORD> ai_ctx;
     static constexpr int simDepth=9, minimaxDepth=9;
 
     TicTacBoard::Move selectMove([[maybe_unused]] const TicTacBoard& original, [[maybe_unused]] const int input) override
@@ -180,12 +180,12 @@ public:
                         const TicTacBoard::Move mv = players[currentPlayer]->selectMove(ticTacBoard, sel);
                         std::printf("  playing: %d \n", mv);
                         running = ticTacBoard.doMove(mv);
-                        if (running == Outcome::invalid)
-                        {
-                            std::printf("invalid move: %d \n", mv);
-                            continue;
-                        }
-                        else if (running == Outcome::fin)
+                        //if (running == Outcome::invalid)
+                        //{
+                        //    std::printf("invalid move: %d \n", mv);
+                        //    continue;
+                        //}
+                        if (running == Outcome::fin)
                         {
                             //players[currentPlayer]->score += 1;
                             std::printf("\033[1;3%dmwinner: %d \033[0m \n", currentPlayer+1, currentPlayer);

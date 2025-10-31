@@ -16,6 +16,37 @@
         static constexpr int N_INTS = (Size + w - 1) / w;
         Int mem[N_INTS] = {};
     public:
+        // Helper for operator[]:
+        class BitProxy
+        {
+            friend class Bitvec;
+        private:
+            Bitvec& m_vec;
+            int m_pos;
+            // Private constructor: only Bitvec can create a proxy:
+            constexpr BitProxy(Bitvec& vec, int pos) : m_vec(vec), m_pos(pos) {}
+        public:
+            BitProxy(const BitProxy&) = default;
+            // Assignment from a boolean or integer value. This is called for `a[i] = true;` or `a[i] = 1;`
+            constexpr BitProxy& operator=(const bool val)
+            {
+                m_vec.set(m_pos, val);
+                return *this;
+            }
+            // Assignment from another bit proxy, for expressions like `a[i] = a[j];`:
+            constexpr BitProxy& operator=(const BitProxy& other)
+            {
+                if (this != &other)
+                     m_vec.set(m_pos, static_cast<bool>(other));
+                return *this;
+            }
+            // Implicit conversion to bool for reading the bit's value, e.g., `if (a[i]) ...`:
+            constexpr operator bool() const
+            {
+                return m_vec.check(m_pos);
+            }
+        };
+    public:
         constexpr Bitvec() = default;
 
         constexpr Bitvec(const Bitvec& other) = default;
@@ -53,6 +84,34 @@
         {
             const Int bit = Int(1) << (pos&(w-1));
             mem[pos>>shift] |= bit;
+        }
+
+        constexpr Bitvec& operator|=(const Bitvec& rhs)
+        {
+            for (int i=0; i<N_INTS; ++i)
+                mem[i] |= rhs.mem[i];
+            return *this;
+        }
+
+        constexpr Bitvec operator|(const Bitvec& rhs) const
+        {
+            Bitvec result = *this;
+            result |= rhs;
+            return result;
+        }
+
+        constexpr Bitvec& operator&=(const Bitvec& rhs)
+        {
+            for (int i=0; i<N_INTS; ++i)
+                mem[i] &= rhs.mem[i];
+            return *this;
+        }
+
+        constexpr Bitvec operator&(const Bitvec& rhs) const
+        {
+            Bitvec result = *this;
+            result &= rhs;
+            return result;
         }
 
         constexpr void set(const int pos, const bool val)
@@ -157,6 +216,11 @@
             identical = identical || (overlap && ((mem[endPos] & maskOverlap) == maskOverlap));
 
             return (Int)identical;
+        }
+
+        constexpr BitProxy operator[](const int pos)
+        {
+            return BitProxy(*this, pos);
         }
 
         constexpr Int operator[](const int pos) const

@@ -7,13 +7,13 @@
 /****************************************/
 /*                 Fisher-Yates shuffle */
 /****************************************/
-    template <typename T>
-    constexpr void FisherYates(T *container, const int len, const int s)
+    template <typename Container>
+    constexpr void FisherYates(Container& container, const int len, const int s)
     {
         for (int k = 0; k < len; ++k)
         {
             const int r = k + s % (len - k);
-            T temp = container[k];
+            auto temp = container[k];
             container[k] = container[r];
             container[r] = temp;
         }

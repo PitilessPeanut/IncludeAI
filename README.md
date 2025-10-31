@@ -4,8 +4,7 @@
 
 ## TAKE YOUR GAME-AI TO THE NEXT LEVEL!!!
 
-Start a program with `#include <includeai.hpp>` to literally include an [stb](https://github.com/nothings/stb/)-style single-header library providing you with a General Game Playing, aka. *Effective Decision Making with Uncertain or Incomplete Information* (EDMUII), AI.
-The goal of this library is to implement [Artificial General Intelligence](https://en.wikipedia.org/wiki/Artificial_general_intelligence) as a single-header drop-in library. Quick deployment and ease-of-use are priotitized.
+Plug-in this Ai and watch magic happen! Under the condition that your game is structured in a certain way (see more below), all you need to do is putting `#include <includeai.hpp>` at the start of your code and you will literally include an [stb](https://github.com/nothings/stb/)-style single-header library providing you with a General Game Playing AI ready for your game!
 *General Game Playing*, while sounding fun, is the second most difficult problem in the universe, far surpassing quantum physics, elliptic curve arithmetic and axionic singularity modulation, but slightly "easier" than mapping homomorphic endofunctors to manifolds of Hilbert space. As such, it remains an ongoing research project! Thread carefully 🔬
 
 
@@ -21,9 +20,11 @@ Not necessary, just copying 'includeai.hpp' into your project should be enough. 
 4. Profit...
 
 ### Features
+- single-header, no maintenance nightmare
+- flexible. Easily adjusable to your game
 - no dynamic memory
 - simple API
-- drop-in library. No CMAKE, Autotools, etc needed!
+- drop-in library. No CMAKE, Autotools, or other such bloat needed!
 - no trap states ([See below](#about-trap-states))
 - no dependencies (other than stdlib)
 - cross platform (tries to be...)
@@ -38,7 +39,7 @@ Calling `mcts<Iterations, Max simulation depth, Minimax depth, Move type, Bitfie
 It should work. See how to include above^, compile with SIMD enabled: `em++ mygame.cpp -o mygame.js -s WASM=1 -msimd128`
 
 ### About Trap States
-Trap states can happen even after all branches of a node were fully explored. In fact, it can even happen after the entire tree has been fully explored (for example in TicTacToe). Therefore, trying to force the search to explore all possible child branches of a node is not only not going to work, but may lead to the tree becoming excessively shallow, or "near-sighted" in addition of failing to detect traps, also missing out on more complex strategies at a deeper level! The real reason traps happen is because the "random rollout" simulation terminates (on avarage!) too early when it discovers a winning node even if that winning position can easily be negated by the opposing player, resulting in the simulation providing (on avarage!) the wrong result. Even running a high number of simulations is not going to work if the simulations tend towards terminating on the wrong outcome. Upon closer investigation we can observe that _trap states are not a problem but a symptom. The real problem is incorrect branch selection!_ The root cause is a fundamentally false assumtion about the result of random rollouts. For example, if there are three loss states and one win state attached to a root node, the rollout selection will score .25, leading to the branch being discarded, even when this would be the only branch with a possible winning move. The reason for this is that a random rollout does not take *depth* into account when calculating the final score! This can easily be demonstrated by relpacing the random rollout function with a lookup table. We can conclude that random rollout functions, as shown in the AlphaZero research paper, and regardless of how many times they are being run, can not be used as a reliable heuristic for branch score estimation.
+Trap states can happen even after all branches of a node were fully explored. In fact, it can even happen after the entire tree has been fully explored (for example in TicTacToe). Therefore, trying to force the search to explore all possible child branches of a node is not only not going to work, but may lead to the tree becoming excessively shallow, or "near-sighted" in addition of failing to detect traps, also missing out on more complex strategies at a deeper level! The real reason traps happen is because the "random rollout" simulation terminates (on avarage!) too early when it discovers a winning node even if that winning position can easily be negated by the opposing player, resulting in the simulation providing (on avarage!) the wrong result. Even running a high number of simulations is not going to work if the simulations tend towards terminating on the wrong outcome. Upon closer investigation we can observe that _trap states are not a problem but a symptom. The real problem is incorrect branch selection!_ The root cause is a fundamentally false assumtion about the result of random rollouts. For example, if there are three loss states and one win state attached to a root node, the rollout selection will score .25, leading to the branch being discarded, even when this would be the only branch with a possible winning move. The reason for this is that a random rollout does not take *depth* into account when calculating the final score! This can easily be demonstrated by relpacing the random rollout function with a lookup table. We can conclude that random rollout functions, as shown in the AlphaZero paper[^2], and regardless of how many times they are being run, can not be used as a reliable heuristic for branch score estimation.
 One mitigation would be to attach weights to branches, giving lower weights for branches at a deeper level. For this to work however, you would need to know the total maximum depth of the game tree (in advance) to attach relative weight, which is impossible in most cases. However, if the *simulation* part could yield a clear result (win/loss) then the ai could play perfectly. But in such a case we might as well replace the entire search tree with a simple minimax since we would no longer be dealing with a probabilistic search! Instead we approach this problem by splitting the simulation part into three pieces:
 1st: minimax up to a predefined depth
 2nd: if that fails: value network estimation
@@ -83,11 +84,12 @@ MCTS_result mcts_res = mcts<1000, 21, 3, YavalathBoard::YavMove, UQWORD>(view, a
 
 ```
 Some initial tests suggest that past a number of iterations of about 8-9000 (and ~600000+ nodes), the AI becomes effectively undefeatable (in Yavalath!). These numbers may vary depending on your game/usecase/etc.
-**The key idea is to push any trap state to a depth beyond the search "horizon", thereby reducing the likelihood of its selection to 0%! **[^2]
+**The key idea is to push any trap state to a depth beyond the search "horizon", thereby reducing the likelihood of its selection to 0%! **[^3]
 
 
 ### Neural Network implementation
-Unlike traditional feed-forward networks, the one included in this library does not feature 'layers' in the classical sense. Instead it is implemented as a sparse graph with the possibility for nodes to be connected randomly or even cyclically! This style of implementation allows for more flexibility to be molded for any given problem domain as opposed to the rigid structure of a layered network.
+Unlike traditional feed-forward networks, the one included in this library does not feature 'layers' in the classical sense. Instead it is implemented as a sparse graph with the possibility for nodes to be connected randomly or even cyclically! This style of implementation allows for more flexibility for different game styles as opposed to the rigid structure of a layered network.
+Note that the network is specifically designed to work with the MCTS loop such that if you call `float *result = nn.evaluate(...);`, the first `result[0]` will contain the value estimation for the current player, while the remaining `result[1...]` will contain the policy vector (move probabilities) for the moves in the current position.
 
 ### Limitations / Assumtions
 While there is no limitation on the number of players (2,3,4...), and it is possible for a player to take two consecutive turns, it is assumed that each player plays one move/action before ending their turn (see note below!). That means that compound moves, such as moving 4 steps forward and 1 step left should be consolidated into a single move instead of taking 5 turns!
@@ -105,4 +107,5 @@ Three things you should note if you decide to use this:
 
 
 [^1]: Like Chess, not Poker: No secrets, dice or cards
-[^2]: Solving the Trap State problem in mcts is analogous to solving the Double-Spend problem in peer-to-peer payment networks: Seems impossible until someone finds a solution. But who??
+[^2] See "phase 3": https://jeffbradberry.com/posts/2015/09/intro-to-monte-carlo-tree-search/
+[^3]: Solving the Trap State problem in mcts is analogous to solving the Double-Spend problem in peer-to-peer payment networks: Seems impossible until someone finds a solution. But who??
