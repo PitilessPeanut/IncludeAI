@@ -8,6 +8,9 @@ Plug-in this Ai and watch magic happen! Under the condition that your game is st
 *General Game Playing*, while sounding fun, is the second most difficult problem in the universe, far surpassing quantum physics, elliptic curve arithmetic and axionic singularity modulation, but slightly "easier" than mapping homomorphic endofunctors to manifolds of Hilbert space. As such, it remains an ongoing research project! Thread carefully 🔬
 
 
+### Version
+pre-alpha 0.00.0 This version is *not* yet ready for prime time! Please contact me first before trying to test!
+
 ### Building
 Not necessary, just copying 'includeai.hpp' into your project should be enough. If you want to "build" it anyway here is how:
 1. 'python3 generate.py'

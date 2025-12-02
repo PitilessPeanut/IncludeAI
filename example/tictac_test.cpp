@@ -58,7 +58,6 @@ public:
 
     Outcome doMove(const Move mv)
     {
-        //if (pos[mv]) return Outcome::invalid;
         turn += 1;
         pos[mv] = currentPlayer;
 

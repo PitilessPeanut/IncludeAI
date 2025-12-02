@@ -162,7 +162,7 @@ public:
 
     int getWinner() const { return winner; }
 
-    Pattern<CELLS+CELLS> *getNextPattern()
+    Pattern<CELLS+CELLS> *getNetworkInputs()
     {
         if (getNextPatternCtr == 1)
         {

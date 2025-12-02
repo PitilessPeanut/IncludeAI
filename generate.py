@@ -14,8 +14,6 @@ source_paths = [
     "src/bitalloc.cpp",
     "src/micro_math.hpp",
     "src/micro_math.cpp",
-    "src/similarity.hpp",
-    "src/similarity.cpp",
     "src/neural.hpp",
     "src/neural.cpp",
     "src/ai.hpp",
@@ -216,6 +214,9 @@ merge_result = """/*
 
     LICENSE
         BSD 4-Clause (See end of file)
+
+    HISTORY
+        0.00.0    - 2025-11-30 - pre-alpha. Don't use
 */\n\n"""
 
 license = """\n/*
