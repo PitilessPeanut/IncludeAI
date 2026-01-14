@@ -80,3 +80,12 @@
                       return a.check(33);
                   }()
                  );
+
+    static_assert([]
+                  {
+                      Bitvec<UBYTE, 8> a;
+                      a.set(1);
+                      a.set(7);
+                      return a.getNthSetBit(0)==1 && a.getNthSetBit(1)==7;
+                  }()
+                 );

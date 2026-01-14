@@ -114,6 +114,20 @@
             return result;
         }
 
+        constexpr Bitvec& operator^=(const Bitvec& rhs)
+        {
+            for (int i=0; i<N_INTS; ++i)
+                mem[i] ^= rhs.mem[i];
+            return *this;
+        }
+
+        constexpr Bitvec operator^(const Bitvec& rhs) const
+        {
+            Bitvec result = *this;
+            result ^= rhs;
+            return result;
+        }
+
         constexpr void set(const int pos, const bool val)
         {
             const Int mask = Int(1) << (pos&(w-1));
@@ -277,6 +291,65 @@
                     cnt += __builtin_popcount( last_val );
             }
             return cnt;
+        }
+
+        template <bool Comptime=false>
+        constexpr int getNthSetBit(Int idx) const
+        {
+            if constexpr (Comptime)
+            {
+                for (int i = 0; i < Size; ++i)
+                {
+                    if (check(i))
+                    {
+                        if (idx == 0)
+                            return i;
+                        idx--;
+                    }
+                }
+                return -1; // Not found
+            }
+            else
+            {
+                for (int i = 0; i < N_INTS; ++i)
+                {
+                    Int word = mem[i];
+                    // Correctly mask the last word if it's not full:
+                    if constexpr (Size % w != 0)
+                    {
+                        if (i == N_INTS - 1)
+                        {
+                            constexpr Int mask = (static_cast<Int>(1) << (Size % w)) - 1;
+                            word &= mask;
+                        }
+                    }
+
+                    int bits_in_word;
+                    if constexpr (sizeof(Int) == sizeof(UQWORD))
+                        bits_in_word = __builtin_popcountll(word);
+                    else
+                        bits_in_word = __builtin_popcount(word);
+
+                    if (idx < bits_in_word)
+                    {
+                        // The bit is in this word. Find it.
+                        // Clear the LSB 'n' times:
+                        for (Int j = 0; j < idx; ++j)
+                            word &= word - 1; // Brian Kernighan's bit-clearing trick
+                        // The LSB of the remaining 'word' is the target bit.
+                        // Find its position using Count Trailing Zeros:
+                        int pos_in_word;
+                        if constexpr (sizeof(Int) == sizeof(UQWORD))
+                            pos_in_word = __builtin_ctzll(word);
+                        else
+                            pos_in_word = __builtin_ctz(word);
+
+                        return (i * w) + pos_in_word;
+                    }
+                    idx -= bits_in_word;
+                }
+                return -1; // Not found
+            }
         }
     };
 

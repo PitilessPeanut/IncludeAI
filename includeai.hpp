@@ -9,6 +9,9 @@
 
     LICENSE
         BSD 4-Clause (See end of file)
+
+    HISTORY
+        0.00.0    - 2025-11-30 - pre-alpha. Don't use
 */
 
 #ifndef INCLUDEAI_HPP
@@ -29,7 +32,7 @@
 #elif defined(__wasm_simd128__)
   #include <wasm_simd128.h>
 #else
-  #error "unknown arch! (use '-msimd128' to fix)"
+  #error "unknown arch! (if compiling for wasm use '-msimd128' to fix)"
 #endif
 
 
@@ -272,9 +275,6 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
 
                             if (avail)
                             {
-                                for (int i=0; i<bucketsRequired; ++i)
-                                    bucketPool[bucketNo+i] = everyBitSet;
-
                                 if (remainingBits > 0)
                                 {
                                     const BitfieldType mask = everyBitSet << (Intbits - remainingBits);
@@ -282,11 +282,13 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
                                     if ((bucketPool[bucketNo+bucketsRequired]&mask) == 0)
                                     {
                                         bucketPool[bucketNo+bucketsRequired] |= mask;
-                                       // break;
                                     }
-                                    //else
-                                    //    break;
+                                    else
+                                        break;
                                 }
+
+                                for (int i=0; i<bucketsRequired; ++i)
+                                    bucketPool[bucketNo+i] = everyBitSet;
 
                                 return Pos{ .posOfAvailChunk = static_cast<int>(bucketNo*Intbits),
                                             .length = static_cast<int>(discoveredSize)
@@ -480,8 +482,10 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
                       testAllocator1.free(1, 191);
                       testAllocator1.free(0, 1);
                       bool ok = testAllocator1.bucketPool[0] == 0;
+                      ok = ok && (testAllocator1.bucketPool[0]+testAllocator1.bucketPool[1]+testAllocator1.bucketPool[2]) == 0;
+                      ok = ok && testAllocator1.bucketPool[3] == 0xffffffffffffffff;
                       auto pos1 = testAllocator1.largestAvailChunk(257);
-                      ok = ok && pos1.posOfAvailChunk==0 && pos1.length==255; // Max size
+                      ok = ok && pos1.posOfAvailChunk==0 && pos1.length==192; // Last bucket already full
                       testAllocator1.free(64, 3);
                       ok = ok && testAllocator1.bucketPool[1] == 0b0001111111111111111111111111111111111111111111111111111111111111;
                       testAllocator1.free(0, 64);
@@ -557,10 +561,10 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
                       testAlloc.free(8, 8);
                       bool ok = testAlloc.bucketPool[0] == 0xff;
                       ok = ok && testAlloc.bucketPool[1] == 0b00000000;
-                     // ok = ok && testAlloc.bucketPool[2] == 0b10000000;
+                      ok = ok && testAlloc.bucketPool[2] == 0b10000000;
                       const auto pos = testAlloc.largestAvailChunk(10); // not enough space anywhere
                       ok = ok && testAlloc.bucketPool[1] == 0b11111111; // 8 of ten placed here
-                      ok = ok && pos.posOfAvailChunk==8 ; //&& pos.length==8;
+                      ok = ok && pos.posOfAvailChunk==8 && pos.length==8; // This check is critical!
                       ok = ok && testAlloc.bucketPool[2] == 0b10000000; // This one should remain unchanged in the BitAlloc_Mode::FAST mode.
                                                                         // In TIGHT mode, it would have been 0b11111111 with 7 bits placed here
                       ok = ok && testAlloc.bucketPool[3] == 0;          // and the remaining 3 bits placed here
@@ -575,13 +579,13 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
 /****************************************/
 /*                 Fisher-Yates shuffle */
 /****************************************/
-    template <typename T>
-    constexpr void FisherYates(T *container, const int len, const int s)
+    template <typename Container>
+    constexpr void FisherYates(Container& container, const int len, const int s)
     {
         for (int k = 0; k < len; ++k)
         {
             const int r = k + s % (len - k);
-            T temp = container[k];
+            auto temp = container[k];
             container[k] = container[r];
             container[r] = temp;
         }
@@ -769,267 +773,484 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
 
 
 
+
+
+inline float sigmoid(float x) { return 1.0f / (1.0f + std::exp(-x)); }
+inline float sigmoid_derivative(float x) { return x * (1.0f - x); }
+inline float relu(float x) { return x > 0 ? x : 0.0001*x; }
+inline float relu_derivative(float x) { return x > 0 ? 1 : 0.0001*x; }
+using std::tanh;
+inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t * t; }
+
+
 /****************************************/
-/*                              pattern */
+/*  feed forward 32 (this one is worse) */
 /****************************************/
-    template <int PatternSize>
-    struct Pattern
+    template <int InputSize, int OutputSize, int Max_layers, typename Rng>
+    class FeedForward32
     {
-        static constexpr int patternSize = PatternSize;
-        bool pattern[PatternSize] = {0}; // todo: bit array!
-    };
-
-
-/****************************************/
-/*                              helpers */
-/****************************************/
-    float sqrt_runtime(float x);
-
-    template <bool comptime=false>
-    constexpr float similarity_sqrt(float x)
-    {
-        if constexpr (comptime)
+    public:
+        template <int Size>
+        struct BitArray
         {
-            if (x <= 0) { return 0; }
-            float guess = x / 2.;
-            float prev_guess = 0.;
-            // Iterate until the guess stabilizes:
-            for (int i = 0; i < 100; ++i)
+            UQWORD data[(Size+63) / 64] = {0};
+            bool operator[](int idx) const
             {
-                prev_guess = guess;
-                guess = (guess + x / guess) / 2.;
-                // Check for convergence:
-                if (prev_guess == guess) { break; }
+                const int word = idx / 64;
+                const int bit  = idx % 64;
+                return (data[word] >> (63 - bit)) & 1;
             }
-            return guess;
-        }
-        else
-        {
-            return sqrt_runtime(x);
-        }
-    }
-
-    template <typename ValType, int PatternSize, bool comptime=false>
-    constexpr float calculateNormalizedDotProduct(const ValType *hay, const ValType *needle)
-    {
-        float dotProduct = 0.0f;
-        float normA = 0.0f;
-        float normB = 0.0f;
-
-        for (int j=0; j<PatternSize; ++j)
-        {
-            dotProduct += hay[j] * needle[j];
-            normA += hay[j] * hay[j];
-            normB += needle[j] * needle[j];
-        }
-
-        normA = similarity_sqrt<comptime>(normA);
-        normB = similarity_sqrt<comptime>(normB);
-
-        float similarity = 0.0f;
-        if (normA > 0 && normB > 0) {
-            similarity = dotProduct / (normA * normB);
-        }
-        return similarity;
-    }
-
-
-    template <int PatternSize>
-    constexpr float calculateJaccardSimilarity(const bool *hay, const bool *needle)
-    {
-        int intersection = 0;
-        int unionCount = 0;
-
-        for (int i = 0; i < PatternSize; ++i)
-        {
-            // For binary data, intersection is the count of positions where both are 1
-            if (hay[i] && needle[i]) {
-                intersection++;
-            }
-
-            // Union is the count of positions where at least one is 1
-            if (hay[i] || needle[i]) {
-                unionCount++;
-            }
-        }
-
-        // Avoid division by zero
-        if (unionCount == 0) {
-            return 0.0f; // Both arrays are all zeros
-        }
-
-        // Jaccard similarity = size of intersection / size of union
-        return static_cast<float>(intersection) / unionCount;
-    }
-
-
-/****************************************/
-/*                   similarity scoring */
-/*   - Why cosine and not Jaccard? -    */
-/* In chess, the overall pattern/       */
-/* structure is often more important    */
-/* than raw counts. Cosine similarity   */
-/* better captures the "shape" or       */
-/* configuration of the position        */
-/****************************************/
-    template <typename Pattern,  bool comptime=false>
-    constexpr float diversify(Pattern *dst, const Pattern& input, const int maxPatterns)
-    {
-        // Find a pair that is MOST similar:
-        float maxSimilarity = -1.0f;
-        int idx1 = 0, idx2 = 0;
-        for (int i=0; i<maxPatterns; ++i)
-        {
-            for (int j=i+1; j<maxPatterns; ++j)
+            void set(int idx, bool value)
             {
-                const float similarity = calculateNormalizedDotProduct<bool, Pattern::patternSize>(dst[i].pattern, dst[j].pattern);
-                if (similarity>maxSimilarity)
+                const int word = idx / 64;
+                const int bit  = idx % 64;
+                if (value)
+                    data[word] |= (UQWORD(1) << (63 - bit));
+                else
+                    data[word] &= ~(UQWORD(1) << (63 - bit));
+            }
+            bool operator==(const BitArray& other) const
+            {
+                for (int i = 0; i < (Size+63) / 64; ++i)
                 {
-                    maxSimilarity = similarity;
-                    idx1 = i;
-                    idx2 = j;
+                    if (data[i] != other.data[i])
+                        return false;
+                }
+                return true;
+            }
+        };
+    private:
+        static constexpr int columns = InputSize+(Max_layers*2)+OutputSize;
+        int nLayers = Max_layers;
+        FLOAT weights[columns * columns];
+        FLOAT biases[columns * Max_layers];
+        BitArray<columns*columns> topologies[ Max_layers ];
+        FLOAT activations[columns * Max_layers];
+    private:
+        static FLOAT u64_to_float(const UQWORD i)
+        {
+            union { UQWORD i; DOUBLE d; } u;
+            // This generates a double in [1.0, 2.0) by setting the exponent bits
+            // and using the top 52 bits of the UQWORD for the mantissa.
+            u.i = (0x3FFULL << 52) | (i >> 12);
+            return static_cast<FLOAT>(u.d - 1.0);
+        }
+    private:
+        template <FLOAT (*Act)(FLOAT)>
+        void forward567(const int layer, const FLOAT *input, int inputSize)
+        {
+            #if 0
+            FLOAT tops[columns*columns];
+            for (int dst = 0; dst < columns; ++dst)
+            {
+                for (int src = 0; src < inputSize; ++src)
+                {
+                    const int i = dst * columns + src;
+                    tops[dst * columns + src] = topologies[layer][i];
+                }
+            }
+
+            for (int dst = 0; dst < columns; ++dst)
+                {
+                    __m256 v_sum = _mm256_setzero_ps();
+                    int src = 0;
+                    const int weight_row_start = dst * columns;
+
+
+                    //__m256 v_connected[inputSize/8];
+                    //int pos = 0;
+                    //for (int src2=src; src2 <= inputSize - 8; src2 += 8)
+                    //{
+                    //    const float connected_mask[8] = {
+                    //        (float)topologies[layer][weight_row_start + src2 + 0],
+                    //        (float)topologies[layer][weight_row_start + src2 + 1],
+                    //        (float)topologies[layer][weight_row_start + src2 + 2],
+                    //        (float)topologies[layer][weight_row_start + src2 + 3],
+                    //        (float)topologies[layer][weight_row_start + src2 + 4],
+                    //        (float)topologies[layer][weight_row_start + src2 + 5],
+                    //        (float)topologies[layer][weight_row_start + src2 + 6],
+                    //        (float)topologies[layer][weight_row_start + src2 + 7]
+                    //    };
+                    //    v_connected[pos++] = _mm256_loadu_ps(connected_mask);
+                    //}
+                    //pos = 0;
+
+                    for (; src <= inputSize - 8; src += 8)
+                    {
+                        // Build the connection mask for 8 elements
+                        //const float connected_mask[8] = {
+                        //    (float)topologies[layer][weight_row_start + src + 0],
+                        //    (float)topologies[layer][weight_row_start + src + 1],
+                        //    (float)topologies[layer][weight_row_start + src + 2],
+                        //    (float)topologies[layer][weight_row_start + src + 3],
+                        //    (float)topologies[layer][weight_row_start + src + 4],
+                        //    (float)topologies[layer][weight_row_start + src + 5],
+                        //    (float)topologies[layer][weight_row_start + src + 6],
+                        //    (float)topologies[layer][weight_row_start + src + 7]
+                        //};
+
+                        const __m256 v_connected = _mm256_loadu_ps(&tops[weight_row_start+src]);
+                        //const __m256 v_connected = _mm256_loadu_ps(connected_mask);
+
+                        // Load 8 contiguous inputs and weights (use 'loadu' for unaligned access)
+                        const __m256 v_input = _mm256_loadu_ps(&input[src]);
+                        const __m256 v_weight = _mm256_loadu_ps(&weights[weight_row_start + src]);
+
+                        __m256 v_prod = _mm256_mul_ps(v_connected, v_weight);
+                        v_sum = _mm256_fmadd_ps(v_prod, v_input, v_sum);
+                    }
+
+                    // Horizontal sum of the 8 floats in the v_sum vector
+                    __m128 v_low = _mm256_castps256_ps128(v_sum);
+                    __m128 v_high = _mm256_extractf128_ps(v_sum, 1);
+                    v_low = _mm_add_ps(v_low, v_high);
+                    __m128 h_sum = _mm_hadd_ps(v_low, v_low);
+                    h_sum = _mm_hadd_ps(h_sum, h_sum);
+                    float sum = _mm_cvtss_f32(h_sum);
+
+                    // Handle any remaining elements (if inputSize is not a multiple of 8)
+                    for (; src < inputSize; ++src)
+                    {
+                        const int i = weight_row_start + src;
+                        if (topologies[layer][i])
+                        {
+                            sum += input[src] * weights[i];
+                        }
+                    }
+
+                    // Apply bias and activation function
+                    activations[(layer * columns) + dst] = Act(sum + biases[(layer * columns) + dst]);
+                }
+            #endif
+        }
+
+
+        template <FLOAT (*Act)(FLOAT)>
+        void forward3455(const int layer, const FLOAT *input, int inputSize)
+        {
+            int cntW = 0;
+            float sparseWeights[columns+columns];
+            float sparseSrc[columns+columns];
+            float sparseDst[columns+columns];
+            for (int dst = 0; dst < columns; ++dst)
+            {
+                for (int src = 0; src < inputSize; ++src)
+                {
+                    const int i = dst * columns + src;
+                    if (topologies[layer][i] != 0)
+                    {
+                        sparseWeights[cntW] = weights[i];
+                      //  sparseSrc[cntSrc++] = src;
+                    }
+                }
+            }
+
+
+
+
+
+            for (int dst = 0; dst < columns; ++dst)
+            {
+                float sum = 0.0f;
+                for (int src = 0; src < inputSize; ++src)
+                {
+                    const int i = dst * columns + src;
+                    const float connected = topologies[layer][i];
+                    sum += input[src] * weights[i] * connected;
+                }
+                activations[(layer*columns) + dst] = Act(sum + biases[(layer*columns) + dst]);
+            }
+        }
+
+
+
+        template <FLOAT (*Act)(FLOAT)>
+        void forward(const int layer, const FLOAT *input, int inputSize)
+        {
+            for (int dst = 0; dst < columns; ++dst)
+            {
+                FLOAT tops[columns];
+                for (int src = 0; src < inputSize; ++src)
+                {
+                    const int i = dst * columns + src;
+                    tops[src] = topologies[layer][i];
+                }
+
+                FLOAT sum = 0.0f;
+                for (int src = 0; src < inputSize; ++src)
+                {
+                    const int i = dst * columns + src;
+                    sum += input[src] * weights[i] * tops[src];
+                }
+                activations[(layer*columns) + dst] = Act(sum + biases[(layer*columns) + dst]);
+            }
+        }
+
+
+
+            //for (int dst = 0; dst < columns; ++dst)
+            //    {
+            //        // Vector accumulator for the dot product.
+            //        float32x4_t v_sum = vdupq_n_f32(0.0f);
+            //        int src = 0;
+            //        const int weight_row_start = dst * columns;
+            //
+            //        for (; src <= inputSize - 4; src += 4)
+            //        {
+            //            // 1. Load 4 contiguous inputs. (FAST)
+            //            const float32x4_t v_input = vld1q_f32(&input[src]);
+            //
+            //            // 2. Load 4 contiguous weights. (FAST)
+            //            const float32x4_t v_weight = vld1q_f32(&weights[weight_row_start + src]);
+            //
+            //            // 3. Handle the 'connected' bits. This remains a bottleneck.
+            //            //    We still need to build the mask on the fly.
+            //            const float connected_mask[4] = {
+            //                (float)topologies[layer][weight_row_start + src + 0],
+            //                (float)topologies[layer][weight_row_start + src + 1],
+            //                (float)topologies[layer][weight_row_start + src + 2],
+            //                (float)topologies[layer][weight_row_start + src + 3]
+            //            };
+            //            const float32x4_t v_connected = vld1q_f32(connected_mask);
+            //
+            //            // 4. Multiply weights and inputs.
+            //            float32x4_t v_prod = vmulq_f32(v_input, v_weight);
+            //            v_sum = vmlaq_f32(v_sum, v_prod, v_connected);
+            //        }
+            //
+            //        // 7. Horizontally add the 4 lanes of the sum vector to get a single float.
+            //        float sum = vgetq_lane_f32(v_sum, 0) + vgetq_lane_f32(v_sum, 1) +
+            //                    vgetq_lane_f32(v_sum, 2) + vgetq_lane_f32(v_sum, 3);
+            //
+            //        // 8. Handle any remaining elements (if inputSize is not a multiple of 4).
+            //        for (; src < inputSize; ++src)
+            //        {
+            //            const int i = weight_row_start + src;
+            //            if (topologies[layer][i])
+            //            {
+            //                sum += input[src] * weights[i];
+            //            }
+            //        }
+            //
+            //        // 9. Apply bias and activation function.
+            //        activations[(layer * columns) + dst] = Act(sum + biases[(layer * columns) + dst]);
+            //    }
+
+
+        template <FLOAT (*Deriv)(FLOAT)>
+        void backward(const int topologyIdx, FLOAT *deltas, const FLOAT *inputs, const FLOAT *activations, FLOAT learning_rate)
+        {
+            FLOAT hidden_error[columns] = {0.0f};
+            for (int input_idx = 0; input_idx < columns; ++input_idx)
+            {
+                const FLOAT common = inputs[input_idx] * learning_rate;
+                for (int hidden_idx = 0; hidden_idx < columns; ++hidden_idx)
+                {
+                    const int weight_idx = input_idx * columns + hidden_idx;
+                    const auto connected = topologies[topologyIdx][weight_idx];
+                    hidden_error[hidden_idx] += inputs[input_idx] * weights[weight_idx] * connected;
+                    weights[weight_idx] += activations[hidden_idx] * common * connected;
+                }
+            }
+            for (int h = 0; h < columns; ++h)
+            {
+                deltas[h] = hidden_error[h] * Deriv(activations[h]);
+                const int biasIdx = (topologyIdx - 1) * columns + h;
+                biases[biasIdx] += deltas[h] * learning_rate;
+            }
+        }
+
+    public:
+        explicit FeedForward32(Rng& rng, bool randomizeTopology = true)
+        {
+            // Initialize weights/biases with random values in range [-1.0, 1.0]
+            // should be ~symmetric around zero
+            for (int i = 0; i < columns * columns; ++i)
+                weights[i] = 2.0f * u64_to_float(rng()) - 1.0f;
+            for (int i = 0; i < columns * Max_layers; ++i)
+                biases[i] = 2.0f * u64_to_float(rng()) - 1.0f;
+
+            // Initialize DAG:
+            int from = InputSize*columns;
+            const int hiddenSize = (columns-(InputSize+OutputSize)) / (nLayers-1);
+            for (int i=0; i<hiddenSize; ++i)
+            {
+                for (int j=0; j<InputSize; ++j)
+                    topologies[0].set(from + j, true);
+                from += columns;
+            }
+            from += InputSize;
+            for (int layer=1; layer<nLayers-1; ++layer)
+            {
+                for (int i=0; i<hiddenSize; ++i)
+                {
+                    for (int j=0; j<hiddenSize; ++j)
+                        topologies[1].set(from + j, true);
+                    from += columns;
+                }
+                from += hiddenSize;
+            }
+            for (int i=0; i<OutputSize; ++i)
+            {
+                for (int j=0; j<hiddenSize; ++j)
+                    topologies[nLayers-1].set(from + j, true);
+                from += columns;
+            }
+
+            // Randomize connections a bit:
+            for (int layer=0; randomizeTopology && layer<nLayers; ++layer)
+            {
+                for (int i=0; i<columns*columns; ++i)
+                {
+                    if (rng() % 100 < 15) // 15% chance to flip
+                    {
+                        const bool current = topologies[layer][i];
+                        topologies[layer].set(i, !current);
+                    }
                 }
             }
         }
 
-        // Decide which of the pair to replace
-        const float sim1 = calculateNormalizedDotProduct<bool, Pattern::patternSize, comptime>(dst[idx1].pattern, input.pattern);
-        const float sim2 = calculateNormalizedDotProduct<bool, Pattern::patternSize, comptime>(dst[idx2].pattern, input.pattern);
-
-        // Select the pattern that has higher similarity with input (we'll replace the one that's more redundant)
-        const int replaceIdx = (sim1 < sim2) ? idx2 : idx1;
-
-        // Replace only if the new pattern would decrease the maximum similarity
-        // Compute similarities of replacement with all other patterns
-        float maxNewSimilarity = -1.0f;
-        for (int i = 0; i < maxPatterns; ++i)
+        FLOAT *evaluate(const FLOAT *inputs)
         {
-            if (i == replaceIdx) continue;
-            const float potentialSim = calculateNormalizedDotProduct<bool, Pattern::patternSize>(dst[i].pattern, input.pattern);
-            maxNewSimilarity = potentialSim > maxNewSimilarity ? potentialSim : maxNewSimilarity;
+            forward<relu>(0, inputs, InputSize);
+            for (int i=1; i<nLayers-1; ++i)
+                forward<relu>(i, &activations[(i-1)*columns], columns);
+            // todo: tahn or softmax?
+            forward<tanh>(nLayers-1, &activations[(nLayers-2)*columns], columns);
+            return &activations[(nLayers-1)*columns];
         }
 
-        // Replace if doing so would reduce the maximum similarity in the collection
-        if (maxNewSimilarity < maxSimilarity)
+        FLOAT train(const FLOAT *inputs, const FLOAT *targets, FLOAT learning_rate)
         {
-            for (int i = 0; i < dst[replaceIdx].patternSize; ++i)
-                dst[replaceIdx].pattern[i] = input.pattern[i];
+            forward<relu>(0, inputs, InputSize);
+            for (int i=1; i<nLayers-1; ++i)
+                forward<relu>(i, &activations[(i-1)*columns], columns);
+            // last layer:
+            // todo: tahn or softmax?
+            forward<tanh>(nLayers-1, &activations[(nLayers-2)*columns], columns);
 
-            return maxNewSimilarity; // Return the new maximum similarity
+            // Output to last hidden (sigmoid):
+            FLOAT squared_error_sum = 0.0f;
+            FLOAT output_delta[columns] = {0.0f};
+            const int lastLayerIdx = (nLayers-1) * columns;
+            for (int j=0; j<OutputSize; ++j)
+            {
+                const int output_neuron_idx = (columns - OutputSize) + j;
+                const FLOAT output_error = targets[j] - activations[lastLayerIdx + output_neuron_idx];
+                output_delta[output_neuron_idx] = output_error * tanh_derivative(activations[lastLayerIdx + output_neuron_idx]);
+                biases[lastLayerIdx + output_neuron_idx] += output_delta[output_neuron_idx] * learning_rate;
+
+                // this line has nothing to do with anything, just for the return at the end:
+                squared_error_sum += output_error * output_error;
+            }
+
+
+            // Hidden (relu):
+            FLOAT *next_layer_deltas = output_delta;
+            FLOAT delta_buffer[columns];
+            for (int l = nLayers-1; l > 1; --l)
+            {
+                backward<relu_derivative>(l, delta_buffer, next_layer_deltas, &activations[(l-1)*columns], learning_rate);
+                next_layer_deltas = delta_buffer;
+            }
+
+
+            // Hidden to input (sigmoid):
+            backward<relu_derivative>(1, delta_buffer, next_layer_deltas, activations, learning_rate);
+
+
+            // Update weights (hidden to input):
+            for (int hidden_idx = 0; hidden_idx < columns; ++hidden_idx)
+            {
+                const FLOAT common = delta_buffer[hidden_idx] * learning_rate;
+                for (int input_idx = 0; input_idx < InputSize; ++input_idx)
+                {
+                    const int weight_idx = hidden_idx * columns + input_idx;
+                    const auto connected = topologies[0][weight_idx];
+                    weights[weight_idx] += inputs[input_idx] * common * connected;
+                }
+            }
+            return squared_error_sum / OutputSize; // mean squared error
         }
-        else
-        {
-            // Not replacing - new pattern would increase similarity:
-            return maxSimilarity; // Keep the current maximum similarity
-        }
-    }
-
-
-
-
+    };
 
 
 /****************************************/
-/*                              helpers */
+/*           feed forward 16 (IEEE 754) */
 /****************************************/
-    float sqrt_runtime(float x)
-    {
-        return std::sqrt(x);
-    }
+template <int InputSize, int OutputSize, int Max_layers, typename Rng>
+using FeedForward16 = FeedForward32<InputSize, OutputSize, Max_layers, Rng>;
+// FLOAT masterCopy
 
+
+/****************************************/
+/*                     "Neural" Network */
+/****************************************/
+  template <int InputSize, int OutputSize, int Max_layers, typename Rng>
+  using Neural = FeedForward16<InputSize, OutputSize, Max_layers, Rng>;
+#else
+  // Of course not... 🙄
+  template <int InputSize, int OutputSize, int Max_layers, typename Rng>
+  using Neural = FeedForward32<InputSize, OutputSize, Max_layers, Rng>;
+#endif
+
+
+
+
+
+
+
+//extern "C" int is_prime(int n);
+
+
+/****************************************/
+/*                      feed forward 32 */
+/****************************************/
+
+/****************************************/
+/*           feed forward 16 (IEEE 754) */
+/****************************************/
 
 /****************************************/
 /*                                Tests */
 /****************************************/
     static_assert([]
                   {
-                      float haystack1[8] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f};
-                      float haystack2[8] = {1.0f, 3.0f, 5.0f, 7.0f, 9.0f, 0.0f, 0.0f, 1.0f};
-                      const float needle[8] = {1.0f, 3.0f, 5.0f, 7.0f, 9.0f, 0.0f, 0.0f, 0.0f};
-                      const float similarity1 = calculateNormalizedDotProduct<float, 8, true>(haystack1, needle);
-                      const float similarity2 = calculateNormalizedDotProduct<float, 8, true>(haystack2, needle);
-                      bool ok = similarity1 < .6014f && similarity2 > 0.99f;
-                      ok = ok && similarity1 < .83f && similarity2 > .82f;
-                      return ok;
+                      constexpr int columns = 10;
+                      float weights[columns * columns] =
+                          { /* From:      0    1       2    3      4     5     6     7      8     9 */
+                            /* To: 0 */ 0.0f, 0.0f,  0.0f, 0.0f, 0.0f,  0.0f, 0.0f, 0.0f,  0.0f, 0.0f,
+                            /*     1 */ 0.0f, 0.0f,  0.0f, 0.0f, 0.0f,  0.0f, 0.0f, 0.0f,  0.0f, 0.0f,
+                            /*     2 */ 0.5f, 0.8f,  0.0f, 0.0f, 0.0f,  0.0f, 0.0f, 0.0f,  0.0f, 0.0f,
+                            /*     3 */-0.4f, 0.1f,  0.0f, 0.0f, 0.0f,  0.0f, 0.0f, 0.0f,  0.0f, 0.0f,
+                            /*     4 */ 0.9f,-0.2f,  0.0f, 0.0f, 0.0f,  0.0f, 0.0f, 0.0f,  0.0f, 0.0f,
+                            /*     5 */ 0.0f, 0.0f, -1.2f, 1.1f, 0.3f,  0.0f, 0.0f, 0.0f,  0.0f, 0.0f,
+                            /*     6 */ 0.0f, 0.0f, -0.8f, 0.4f,-0.9f,  0.0f, 0.0f, 0.0f,  0.0f, 0.0f,
+                            /*     7 */ 0.0f, 0.0f,  0.2f, 0.7f,-0.8f,  0.0f, 0.0f, 0.0f,  0.0f, 0.0f,
+                            /*     8 */ 0.0f, 0.0f,  0.0f, 0.0f, 0.0f,  1.3f,-0.4f, 0.6f,  0.0f, 0.0f,
+                            /*     9 */ 0.0f, 0.0f,  0.0f, 0.0f, 0.0f, -0.5f, 0.2f,-0.1f,  0.0f, 0.0f
+                          };
+                      int i=0;
+                      auto rng = [&weights, &i]()
+                      {
+                          return weights[i];
+                      };
+                      auto correct0 = Neural<2,2,3,decltype(rng)>::BitArray<columns*columns>{
+                                          0b0000000000000000000011000000001100000000110000000000000000000000,
+                                          0b0000000000000000000000000000000000000000000000000000000000000000
+                                      };
+                      auto correct1 = Neural<2,2,3,decltype(rng)>::BitArray<columns*columns>{
+                                          0b0000000000000000000000000000000000000000000000000000111000000011,
+                                          0b1000000011100000000000000000000000000000000000000000000000000000
+                                      };
+                      auto correct2 = Neural<2,2,3,decltype(rng)>::BitArray<columns*columns>{
+                                          0b0000000000000000000000000000000000000000000000000000000000000000,
+                                          0b0000000000000000000001110000000111000000000000000000000000000000
+                                      };
+                      return true; // todo!!!
                   }()
                  );
-
-
-
-/*
-    NOTE: This file is auto-generated by generate.py from isprime.S.
-    Do not edit this file directly.
-*/
-
-// Only enable for GCC/Clang on x86-64 where this syntax is valid.
-#if defined(__GNUC__) && defined(__x86_64__)
-
-
-// The 'naked' attribute tells GCC not to generate a function prologue/epilogue,
-// as we provide it ourselves in the assembly code.
-__attribute__((naked))
-int is_prime(int n) {
-    // The 'volatile' keyword prevents the compiler from optimizing this block away.
-    __asm__ __volatile__(
-                ".intel_syntax noprefix\n\t"
-        "is_prime:\n\t"
-        "push rbp\n\t"
-        "mov rbp, rsp\n\t"
-        "mov DWORD PTR [rbp-4], edi        ; store n into local var\n\t"
-        "cmp DWORD PTR [rbp-4], 2\n\t"
-        "jl .not_prime\n\t"
-        "mov DWORD PTR [rbp-8], 2\n\t"
-        ".loop:\n\t"
-        "mov eax, DWORD PTR [rbp-8]        ; eax = i\n\t"
-        "imul eax, eax                     ; eax = i * i\n\t"
-        "cmp eax, DWORD PTR [rbp-4]        ; if (i*i > n) break\n\t"
-        "jg .is_prime\n\t"
-        "mov eax, DWORD PTR [rbp-4]        ; eax = n\n\t"
-        "xor edx, edx\n\t"
-        "mov ecx, DWORD PTR [rbp-8]        ; ecx = i\n\t"
-        "idiv ecx                          ; eax=n/i, edx=n%i\n\t"
-        "cmp edx, 0                        ; if (n % i == 0)\n\t"
-        "je .not_prime\n\t"
-        "add DWORD PTR [rbp-8], 1          ; i++\n\t"
-        "jmp .loop\n\t"
-        ".is_prime:\n\t"
-        "mov eax, 1                        ; return 1 (true)\n\t"
-        "pop rbp\n\t"
-        "ret\n\t"
-        ".not_prime:\n\t"
-        "mov eax, 0                        ; return 0 (false)\n\t"
-        "pop rbp\n\t"
-        "ret\n\t"
-        ".att_syntax prefix"
-    );
-}
-
-
-#endif // __GNUC__ && __x86_64__
-
-
-
-
-
-/****************************************/
-/*                     "Neural network" */
-/****************************************/
-
-
-
-
-
-
-
-
-
-/****************************************/
-/*                     "Neural network" */
-/****************************************/
-
-/****************************************/
-/*                                Tests */
-/****************************************/
 
 
 
@@ -1052,8 +1273,8 @@ int is_prime(int n) {
 
 
 
-#if defined(AI_DEBUG)
-#endif
+//#if defined(AI_DEBUG)
+//#endif
 
 
 
@@ -1078,13 +1299,13 @@ int is_prime(int n) {
     inline constexpr T aiMax(T x, T y) { return x > y ? x : y; }
 
 // assert/debug
-    #if defined(AI_DEBUG)
+  //  #if defined(AI_DEBUG)
       #define aiAssert(x) assert(x)
-      #define aiDebug(x) x
-    #else
-      #define aiAssert(x)
-      #define aiDebug(x)
-    #endif
+ //     #define aiDebug(x) x
+  //  #else
+  //    #define aiAssert(x)
+   //   #define aiDebug(x)
+    //#endif
 
 
 /****************************************/
@@ -1111,11 +1332,8 @@ int is_prime(int n) {
 /* percieved by one player (incomplete  */
 /* information)                         */
 /****************************************/
-  //  template <typename T>
-  //  concept convertible_to_ptrFloat =
-  //      std::convertible_to<T, HALF *> ||
-  //      std::convertible_to<T, DOUBLE *> ||
-   //     std::convertible_to<T, FLOAT *>;
+    template <typename T>
+    concept convertible_to_ptrFloat = std::convertible_to<T, DOUBLE *> || std::convertible_to<T, FLOAT *>;
 
     template <typename T>
     concept Gameview =
@@ -1124,13 +1342,18 @@ int is_prime(int n) {
         !std::copyable<T> &&
         requires (T obj, const T cobj)
         {
+            // todo: how to require noexcept?
             {cobj.clone()} -> std::same_as<T>;
-            {obj.generateMovesAndGetCnt(nullptr)} -> std::convertible_to<int>;
-            {obj.doMove(int())} -> std::same_as<Outcome>;
+            {cobj.generateMovesAndGetCnt(nullptr)} -> std::convertible_to<int>;
+            {obj.doMove(typename T::Move{})} -> std::same_as<Outcome>;
             {obj.switchPlayer()};
             {cobj.getCurrentPlayer()} -> std::equality_comparable;
             {cobj.getWinner()} -> std::equality_comparable;
-           // {obj.getNetworkInputs()} -> convertible_to_ptrFloat;
+            {cobj.getBoardScore()} -> std::convertible_to<FLOAT>;
+            {obj.getNetworkInputs()} -> convertible_to_ptrFloat;
+            {obj.randomize()};
+            //{ T::MaxNetworkInputs } -> std::convertible_to<std::size_t>; // todo
+            //requires std::bool_constant<T::MaxNetworkInputs >= 0>::value;
         };
 
 
@@ -1157,6 +1380,7 @@ int is_prime(int n) {
         SWORD    visits = 1; // Must be '1' to stop 'nan' // todo if changed also chage in ucbselect()!
         FLOAT    UCBscore;         // Placeholder used during UCB calc.
         #ifdef INCLUDEAI__ADD_SCORE_FOR_TERMINAL_NODES
+        // todo: this could be removed. is it redundant if we have cutoff depth?
           FLOAT    terminalScore = 0.f; // Keeping another separate score for terminal nodes may not make sense,
                                         // since a terminal condition may pop up at any level of the tree,
                                         // which means that by the time we are back at the root, a wrong node
@@ -1165,11 +1389,11 @@ int is_prime(int n) {
 SWORD branchScore = 0;
 int shallowestTerminalDepth = 9999;
 
-        constexpr Node()
-          : moveHere(0)
+        constexpr Node() noexcept
+          : moveHere{}
         {}
 
-        constexpr Node(Node *newParent, Move move)
+        constexpr Node(Node *newParent, Move move) noexcept
           : activeBranches(never_expanded),
             parent(newParent),
             // Ownership is implicit: the 'owner' is the player who makes this move!
@@ -1179,7 +1403,7 @@ int shallowestTerminalDepth = 9999;
         Node(const Node&)            = delete;
         Node& operator=(const Node&) = delete;
         Node(Node&&)                 = delete;
-        Node& operator=(Node&& other)
+        Node& operator=(Node&& other) noexcept
         {
             if (this != &other)
             {
@@ -1208,66 +1432,24 @@ int shallowestTerminalDepth = 9999;
 /****************************************/
 /*                           Ai context */
 /****************************************/
-    template <int NumNodes, GameMove MoveType, BitfieldIntType BitfieldType, class Pattern, int MaxPatterns>
+    template <int NumNodes, GameMove MoveType, BitfieldIntType BitfieldType>
     struct Ai_ctx
     {
         static constexpr int numNodes = NumNodes;
         BitAlloc<NumNodes, BitfieldType> bitalloc;
         Node<MoveType> nodePool[NumNodes];
 
-        static constexpr int maxPatterns = MaxPatterns;
-        int storedPatterns = 0;
-        Pattern patterns[maxPatterns];
-        float maxPatternSimilarity = 1.f;
-
         Ai_ctx() {}
         Ai_ctx(const Ai_ctx&) = delete;
         Ai_ctx& operator=(const Ai_ctx&) = delete;
-
-        template <Gameview Board>
-        void collectPattern(Board& current)
-        {
-            const Pattern *ptrInputs = current.getNextPattern();
-            while (ptrInputs != nullptr)
-            {
-                if (storedPatterns < maxPatterns)
-                {
-                    Pattern& target = patterns[storedPatterns];
-                    for (int i=0; i<target.patternSize; ++i)
-                        target.pattern[i] = ptrInputs->pattern[i];
-                    storedPatterns += 1;
-                }
-                else
-                {
-                    maxPatternSimilarity = diversify(patterns, *ptrInputs, maxPatterns);
-                }
-                ptrInputs = current.getNextPattern();
-            }
-        }
-
-        template <Gameview Board>
-        void train(Board& current)
-        {
-            const Pattern *ptrInputs = current.getNextPattern();
-            // todo
-        }
-
-        template <Gameview Board>
-        float query(Board& current) const
-        {
-            // todo
-            const float win  = 1;// inputs[0];
-            const float lose = 1; //-inputs[1];
-            return (win+lose) / 2.f;
-        }
     };
 
 
 /****************************************/
 /*    Search tree node helper functions */
 /****************************************/
-    template <int NumNodes, GameMove MoveType, BitfieldIntType BitfieldType, class Pattern, int NumPatterns>
-    inline Node<MoveType> *disconnectBranch(Ai_ctx<NumNodes, MoveType, BitfieldType, Pattern, NumPatterns>& ai_ctx,
+    template <int NumNodes, GameMove MoveType, BitfieldIntType BitfieldType>
+    inline Node<MoveType> *disconnectBranch(Ai_ctx<NumNodes, MoveType, BitfieldType>& ai_ctx,
                                             Node<MoveType> *parent,
                                             const Node<MoveType> *removeMe
                                            )
@@ -1279,7 +1461,7 @@ int shallowestTerminalDepth = 9999;
         aiAssert((removeMe-ai_ctx.nodePool)>=0 && (removeMe-ai_ctx.nodePool)<ai_ctx.numNodes);
         aiAssert((parent->parent==nullptr) || (removeMe->activeBranches <= 0));
 
-        std::printf("disc pos: %d len: %d parnode: %p \n", removeMe-ai_ctx.nodePool, 1, parent-ai_ctx.nodePool);
+        //std::printf("disc pos: %d len: %d parnode: %p \n", removeMe-ai_ctx.nodePool, 1, parent-ai_ctx.nodePool);
 
 
         const auto posOfChild = removeMe - parent->branches;
@@ -1306,7 +1488,7 @@ int shallowestTerminalDepth = 9999;
         const auto     removedVisits   = swapDst.visits;
         const auto     removedScore    = swapDst.score;
         const auto     removedBranchScore = swapDst.branchScore;
-        const auto    removedShallowestTerminalDepth = swapDst.shallowestTerminalDepth;
+        const auto     removedShallowestTerminalDepth = swapDst.shallowestTerminalDepth;
 
         Node<MoveType>& swapSrc = parent->branches[parent->activeBranches-1];
 
@@ -1378,7 +1560,7 @@ int shallowestTerminalDepth = 9999;
         // Run simulations:
         for (int i=0; i<MaxRandSims; ++i)
         {
-            Board boardSim = original.clone();
+            Board boardSim = original.clone(); // todo: randomize?
             // Start single sim, run until end:
             auto outcome = Outcome::running;
             do
@@ -1406,6 +1588,9 @@ int shallowestTerminalDepth = 9999;
 
 /****************************************/
 /*                              Minimax */
+/* A board.clone() arrivig here has     */
+/* probably already been randomized.    */
+/* Randomization does not work here   */
 /****************************************/
     constexpr SWORD MinimaxWin              =   1;
     constexpr SWORD MinimaxDraw             =   0;
@@ -1422,6 +1607,7 @@ int shallowestTerminalDepth = 9999;
         if (depth==0) { return MinimaxIndeterminable; }
 
         Board clone = current.clone();
+        const auto playerBefore = clone.getCurrentPlayer();
         clone.switchPlayer();
         const Outcome outcome = clone.doMove(move);
         if (outcome != Outcome::running)
@@ -1433,6 +1619,8 @@ int shallowestTerminalDepth = 9999;
             else
                 return MinimaxWin;
         }
+        const auto playerAfter = clone.getCurrentPlayer();
+        const SWORD polarity = (playerBefore==playerAfter) ? 1 : -1;
         typename Board::StorageForMoves storageForMoves;
         int nMoves = clone.generateMovesAndGetCnt(storageForMoves);
         nMoves -= 1;
@@ -1440,7 +1628,7 @@ int shallowestTerminalDepth = 9999;
         while (nMoves >= 0)
         {
             const MoveType moveHere = storageForMoves[nMoves];
-            const SWORD mnx = -minimax(clone, moveHere, -beta, -alpha, depth-1);
+            const SWORD mnx = polarity * minimax(clone, moveHere, beta*polarity, alpha*polarity, depth-1);
             minimaxScore = aiMax(minimaxScore, mnx);
             alpha        = aiMax(alpha, mnx);
             // Alpha-Beta Pruning (Thank you AI!!!!):
@@ -1456,7 +1644,10 @@ int shallowestTerminalDepth = 9999;
     inline constexpr SWORD minimax(const Board& current, const int MaxDepth)
     {
         Board clone = current.clone();
+
+        const auto playerBefore = clone.getCurrentPlayer();
         clone.switchPlayer();
+        const auto playerAfter = clone.getCurrentPlayer();
         typename Board::StorageForMoves storageForMoves;
         int nMoves = clone.generateMovesAndGetCnt(storageForMoves);
         nMoves -= 1;
@@ -1464,7 +1655,11 @@ int shallowestTerminalDepth = 9999;
         while (nMoves >= 0)
         {
             const MoveType moveHere = storageForMoves[nMoves];
-            const SWORD mnx = -minimax(clone, moveHere, MinimaxLose-1, MinimaxWin+1, MaxDepth);
+            SWORD mnx;
+            if (playerBefore==playerAfter)
+                mnx = minimax(clone, moveHere, MinimaxLose, MinimaxWin, MaxDepth);
+                else
+                mnx = -minimax(clone, moveHere, MinimaxLose/*-1*/, MinimaxWin/*+1*/, MaxDepth);
             if (mnx > best)
                 best = mnx;
             nMoves -= 1;
@@ -1479,7 +1674,10 @@ int shallowestTerminalDepth = 9999;
     template <GameMove MoveType>
     struct MCTS_result
     {
-        enum { simulations, minimaxes, maxPatternSimilarity, end };
+        enum { simulations, minimaxes, thresholdReset, networkEvaluated, terminalReached,
+               score, visits,
+               end
+             };
         int statistics[end] = {0};
         MoveType best;
     };
@@ -1488,7 +1686,7 @@ int shallowestTerminalDepth = 9999;
     class MCTS_Future
     {
     public:
-        bool have_result() const
+        bool ready() const
         {
             return false;
         }
@@ -1509,9 +1707,10 @@ int shallowestTerminalDepth = 9999;
               BitfieldIntType BitfieldType,
               Gameview Board,
               typename AiCtx,
+              typename NN,
               typename Rndfunc
              >
-    constexpr MCTS_result<MoveType> mcts(const Board& boardOriginal, AiCtx& ai_ctx, Rndfunc rand)
+    constexpr MCTS_result<MoveType> mcts(const Board& boardOriginal, AiCtx& ai_ctx, NN& nn, Rndfunc rand) noexcept
     {
         [[maybe_unused]] auto UCBselectBranch =
             [](const Node<MoveType>& node) -> Node<MoveType> *
@@ -1601,13 +1800,15 @@ int shallowestTerminalDepth = 9999;
         }
 
         int cutoffDepth = 9999;
-        FLOAT threshold = 1.f; // 'threshold' above which the result of the neuralnet is used, not minimax or randroll
+        FLOAT threshold = 1.f; // 'threshold' above which the result of .evaluate() is used, not minimax or randroll
         SWORD rootMovesRemaining;
         MCTS_result<MoveType> mcts_result;
         for (int iterations=0; root->activeBranches!=0 && iterations<MaxIterations; ++iterations)
         {
             Node<MoveType> *selectedNode = root;
             Board boardClone = boardOriginal.clone();
+            boardClone.randomize(); // Hidden information is simulated by creating a "plausibe" random game state
+            typename Board::StorageForMoves storageForMoves;
             Outcome outcome = Outcome::running;
             int depth = 1;
 
@@ -1616,6 +1817,7 @@ int shallowestTerminalDepth = 9999;
 
             // 1. Traverse tree and select leaf:
             Node<MoveType> *parentOfSelected;
+            bool is_desynchronized = false;
             while ((selectedNode->activeBranches > 0) && (rootMovesRemaining == 0))
             {
                 parentOfSelected = selectedNode;
@@ -1624,21 +1826,37 @@ int shallowestTerminalDepth = 9999;
                 //aiAssert(selectedNode->branchScore == 0);
                 aiAssert(selectedNode->parent == parentOfSelected);
                 const MoveType moveHere = selectedNode->moveHere;
-                [[maybe_unused]] const auto outcome = boardClone.doMove(moveHere);
+                const int nMoves = boardClone.generateMovesAndGetCnt(storageForMoves);
+                // desyncs can happen due to the call to randomize() above ^^
+                bool moveIsValid = false;
+                for (int i=0; i<nMoves; ++i)
+                {
+                    if (moveHere == storageForMoves[i])
+                    {
+                        moveIsValid = true;
+                        break;
+                    }
+                }
+                if (!moveIsValid)
+                {
+                    is_desynchronized = true;
+                   // assert(false);
+                    break;
+                }
+
+
+                outcome = boardClone.doMove(moveHere);
                 boardClone.switchPlayer();
                 depth += 1;
                 if (outcome != Outcome::running)
                 {
-                    //cutoffDepth = cutoffDepth < depth ? cutoffDepth : depth;
-                    //  selectedNode = selectedNode->parent;
-                }
-                if (depth == cutoffDepth)
-                {
-                    //std::printf("\033[1;36m %d \033[0m \n", depth);
-                    //assert(false);
-                    //break;
+                    cutoffDepth = cutoffDepth < depth ? cutoffDepth : depth;
+                    break;
                 }
             }
+
+            if (is_desynchronized)
+                continue;
 
             //if (selectedNode->activeBranches != Node::never_expanded) { std::printf("------never exp. ---%d \n", selectedNode==root); break; } // insuff nodes!
             //if (selectedNode->parent && selectedNode->parent->activeBranches>0) aiAssert(selectedNode->parent->branches);
@@ -1677,7 +1895,7 @@ int shallowestTerminalDepth = 9999;
                     std::printf("\033[1;35mexceeded! %d vs  %d \n\033[0m", ai_ctx.numNodes, nodePos+nValidMoves);
                     // Can't be salvaged. Once we are out of nodes we can't release already
                     // alloc'd branches (cuz we must reach a terminal node for that). We are stuck:
-                    aiAssert(false);
+                    //aiAssert(false);
                     break;
                     //nValidMoves = nValidMoves - ((nodePos+nValidMoves)-nValidMoves);
                     //nValidMoves -= 1;
@@ -1729,10 +1947,11 @@ int shallowestTerminalDepth = 9999;
                 selectedNode = &root->branches[rootMovesRemaining];
                 outcome = boardClone.doMove( selectedNode->moveHere );
                 boardClone.switchPlayer();
-                if (selectedNode->moveHere == 59)
-                {
-                    std::printf("root move: %d \n", selectedNode->moveHere);
-                }
+                depth += 1;
+                //if (selectedNode->moveHere == 59)
+                //{
+                //    std::printf("root move: %d \n", selectedNode->moveHere);
+                //}
             }
             // 3b. Pick (select) a node for analysis:
             else if (selectedNode->activeBranches > 0)
@@ -1746,7 +1965,7 @@ int shallowestTerminalDepth = 9999;
                 //aiAssert(selectedNode->score < 1.f);
                 outcome = boardClone.doMove( selectedNode->moveHere );
                 boardClone.switchPlayer();
-                //depth += 1;
+                depth += 1;
             }
 
 
@@ -1774,6 +1993,7 @@ int shallowestTerminalDepth = 9999;
             // 4. Determine branch score ("rollout"):
             bool disconnect = false;
             if (outcome != Outcome::fin) // <- This one
+                // todo: remove this ifdef
             #if INCLUDEAI__BRANCH_ON_WRONG_TERMINAL_CONDITION
               if (outcome == Outcome::running) // <- Not this
             #endif
@@ -1786,36 +2006,45 @@ int shallowestTerminalDepth = 9999;
                   const SWORD polarity = boardClone.getWinner()!=boardOriginal.getCurrentPlayer() ? -1 : 1;
                 #endif
 
-                const FLOAT neuroscore = ai_ctx.query(boardClone);
-                //if (true && aiAbs(neuroscore) < threshold) // todo!
+                const FLOAT *pValues = nn.evaluate(boardClone.getNetworkInputs(), boardClone.getBoardScore());
+                const FLOAT confidence = pValues[0];
+                aiAssert(confidence<1.1f && confidence>-1.1f);
+                if (aiAbs(confidence) < threshold)
                 {
                     const SWORD branchscore = minimax<Board, MoveType>(boardClone, MinimaxDepth) * polarity;
-                    aiAssert(-abs(branchscore) != MinimaxIndeterminable99);
-                    if (branchscore == MinimaxIndeterminable)
+                    //aiAssert(-abs(branchscore) != MinimaxIndeterminable99); todo test!!!
+                    if (branchscore == MinimaxIndeterminable) // Fallback if minimax "fails"
                     {
                         // Simulate to get an estimation of the quality of this position:
                         score = simulate<SimDepth>(boardClone, rand);
                         score *= polarity-0.f;
                         mcts_result.statistics[MCTS_result<MoveType>::simulations] += 1;
+                        // worst case: no clear result. Adjust threshold:
+                        if (aiAbs(score) <= 0.1f)
+                        {
+                            threshold = 0.f;
+                            mcts_result.statistics[MCTS_result<MoveType>::thresholdReset] += 1;
+                        }
                     }
                     else
                     {
                         score = branchscore-0.f;
-                        const bool sameSign = (score * neuroscore) > 0;
+                        const bool sameSign = (score * confidence) > 0;
                         if (sameSign)
-                            threshold = aiMin(neuroscore, threshold);
+                            threshold = aiMin(confidence, threshold);
                         #ifdef INCLUDEAI__INSTANT_LOBOTOMY
                           disconnect = true;
                         #endif
                         mcts_result.statistics[MCTS_result<MoveType>::minimaxes] += 1;
                     }
                 }
-                //else
+                else
                 {
-                  //  score = neuroscore * (polarity-0.f);
+                    score = confidence * (polarity-0.f);
+                    mcts_result.statistics[MCTS_result<MoveType>::networkEvaluated] += 1;
                 }
             }
-            else
+            else // This is a terminal node (game ended here)
             {
                 cutoffDepth = cutoffDepth < depth ? cutoffDepth : depth;
                 selectedNode->shallowestTerminalDepth = depth<selectedNode->shallowestTerminalDepth ? depth : selectedNode->shallowestTerminalDepth;
@@ -1833,6 +2062,7 @@ int shallowestTerminalDepth = 9999;
                     #endif
                 }
                 disconnect = true;
+                mcts_result.statistics[MCTS_result<MoveType>::terminalReached] += 1;
             }
 
 
@@ -1852,14 +2082,14 @@ int shallowestTerminalDepth = 9999;
 
                 while (parent)
                 {
-                    std::printf("/// active:%d *brnch-start:%p root:%p parent:%p dep:%d sel:%p scr:%2.2f\n", parent->activeBranches, parent->branches-ai_ctx.nodePool, root-ai_ctx.nodePool, parent-ai_ctx.nodePool, 0, selectedNode-ai_ctx.nodePool, score);
+                    //std::printf("/// active:%d *brnch-start:%p root:%p parent:%p dep:%d sel:%p scr:%2.2f\n", parent->activeBranches, parent->branches-ai_ctx.nodePool, root-ai_ctx.nodePool, parent-ai_ctx.nodePool, 0, selectedNode-ai_ctx.nodePool, score);
 
-                    std::printf("still active 'siblings': ");
+                    //std::printf("still active 'siblings': ");
                     for (int i=0; false&&i<parent->activeBranches; ++i)
                     {
-                        std::printf("\033[0;33m%p scr:%2.2f  \033[0m", (&parent->branches[i])-ai_ctx.nodePool, parent->branches[i].score);
+                   //     std::printf("\033[0;33m%p scr:%2.2f  \033[0m", (&parent->branches[i])-ai_ctx.nodePool, parent->branches[i].score);
                     }
-                    std::printf("%d \n", parent->activeBranches);
+                  //  std::printf("%d \n", parent->activeBranches);
 
 
                     Node<MoveType> *todo = selectedNode->parent;
@@ -1895,12 +2125,9 @@ int shallowestTerminalDepth = 9999;
                                if (fast)
                                fast = fast->parent;
                                if (fast == slow)
-                               {
-                                   fast = nullptr; // 'break'
                                    return false;
-                               }
                                if (fast)
-                               fast = fast->parent;
+                                   fast = fast->parent;
                                slow = slow->parent;
                            }
                            return true;
@@ -1927,7 +2154,8 @@ int shallowestTerminalDepth = 9999;
                 // This 'if' is used to (optionally) stop counting scores for branches that are deeper
                 // than the most immediate node where a turn ends:
                 //if ([&]{ if constexpr ((cutoff_scoring&hyperparams)==cutoff_scoring) return branchDepth<cutoff; else return true; }())
-                //if (depth <= cutoffDepth)
+               //////////
+                if (depth <= cutoffDepth) // <- This line dramatically improves the "ai"
                 {
                     // 'visits' does not tell us if a position is a winner or not. It tells us
                     // how -interesting- a position is:
@@ -1954,8 +2182,9 @@ int shallowestTerminalDepth = 9999;
         } // iterations
 
 
-        // This is the part NOT discussed in the AlphaZero paper (or ANY mcts paper for that matter):
-        // What to do when terminal and non-terminal nodes appear in the tree mixed together????
+        // Max child  vs Robust child vs Robust-max child vs Secure child "Progressive Strategies for Monte-Carlo Tree Searc"
+
+        // The following "shallowTest" code is absolutely VITAL and must not be removed or "disabled"!!!:
         int shallowestTerminal = 9999;
         for (int i=0; i<root->createdBranches; ++i)
         {
@@ -1963,25 +2192,23 @@ int shallowestTerminalDepth = 9999;
             if (branch.shallowestTerminalDepth < shallowestTerminal)
                 shallowestTerminal = branch.shallowestTerminalDepth;
         }
+        if (shallowestTerminal != 9999)
+        {
+            for (int i=0; i < root->createdBranches; ++i)
+            {
+                Node<MoveType>& branch = root->branches[i];
+                if (branch.shallowestTerminalDepth == shallowestTerminal)
+                {
+                    if (branch.score > 0.f)
+                        continue;
+                }
+                else
+                {
+                    branch.score = -9999.f;
+                }
+            }
+        } // (shallowestTerminal != 9999)
 
-        #ifndef INCLUDEAI__DISABLE_DETECTION_OF_INSTANT_WIN
-          if (shallowestTerminal != 9999)
-          {
-              for (int i=0; i < root->createdBranches; ++i)
-              {
-                  Node<MoveType>& branch = root->branches[i];
-                  if (branch.shallowestTerminalDepth == shallowestTerminal)
-                  {
-                      if (branch.score > 0.f)
-                          continue;
-                  }
-                  else
-                  {
-                      branch.score = -1000.f; // -iters! Todo!!
-                  }
-              }
-          } // (shallowestTerminal != 9999)
-        #endif
 
         // Yes, scoring is complex!!!:
         auto bestScore = root->branches[0].score;
@@ -2025,16 +2252,21 @@ int shallowestTerminalDepth = 9999;
 
             for (int i=0; i<root->createdBranches; ++i)
             {
+                // todo assert(root->branches[i].score != nan);
 
-              //  if (i==bestScore) std::printf("\033[1;36m");
+                if (i==/*bestScore*/posScore) std::printf("\033[1;36m");
                 //std::printf("mv: %c %d  bs:%d   ", root->branches[i].moveHere, root->branches[i].moveHere, root->branches[i].branchScore);
                 // v/s == exploration E!
-                //std::printf("s:%4.3f v:%d  dp: %d   act:%d  s/v:%2.3f v/s:%2.5f \033[0m \n", root->branches[i].score, root->branches[i].visits, root->branches[i].shallowestTerminalDepth, root->branches[i].activeBranches, root->branches[i].score/ root->branches[i].visits,root->branches[i].visits/root->branches[i].score);
+               // std::printf("s:%4.3f v:%d  dp: %d   act:%d  s/v:%2.3f v/s:%2.5f \033[0m \n", root->branches[i].score, root->branches[i].visits, root->branches[i].shallowestTerminalDepth, root->branches[i].activeBranches, root->branches[i].score/ root->branches[i].visits,root->branches[i].visits/root->branches[i].score);
             }
-            std::printf("threshold: %f mv: %d \033[1;31mcutoff: %d\033[0m ACT:%d maxPatternsim %f \n",
-                          threshold, root->branches[posScore].moveHere, cutoffDepth, root->activeBranches, ai_ctx.maxPatternSimilarity);
+            std::printf("threshold: %.2f mv: %d \033[1;31mcutoff: %d\033[0m ACT:%d \n",
+                          threshold, root->branches[posScore].moveHere, cutoffDepth, root->activeBranches ); //, ai_ctx.maxPatternSimilarity);
 
-            mcts_result.statistics[MCTS_result<MoveType>::maxPatternSimilarity] = ai_ctx.maxPatternSimilarity*100;
+
+
+
+            mcts_result.statistics[MCTS_result<MoveType>::score]  = bestScore * 100.f;
+            mcts_result.statistics[MCTS_result<MoveType>::visits] = bestVisits;
             mcts_result.best = [root, posVisits, posScore, bestScore]
                                {
                                    if (bestScore > 0.f)
@@ -2054,7 +2286,7 @@ int shallowestTerminalDepth = 9999;
               typename AiCtx,
               typename Rndfunc
              >
-    MCTS_Future<MoveType> mcts_async(const Board& boardOriginal, AiCtx& ai_ctx, Rndfunc rand)
+    MCTS_Future<MoveType> mcts_async(const Board& boardOriginal, AiCtx& ai_ctx, Rndfunc rand) noexcept
     {
         // https://github.com/cdwfs/cds_sync/blob/master/cds_sync.h
         using atomic = int;
@@ -2107,7 +2339,7 @@ int shallowestTerminalDepth = 9999;
             return dst;
         }
 
-        constexpr int generateMovesAndGetCnt(TicTacTest::Move *availMoves)
+        constexpr int generateMovesAndGetCnt(TicTacTest::Move *availMoves) const
         {
             int availMovesCtr = 0;
             for (int i=0; i<9; ++i)
@@ -2150,15 +2382,11 @@ int shallowestTerminalDepth = 9999;
 
         constexpr int getWinner() const { return winner; }
 
-        float *getNetworkInputs()
-        {
-            for (int i=0; i<9; ++i)
-            {
-                neuralInputs[i  ] = pos[i] == currentPlayer;
-                neuralInputs[i+9] = pos[i] != currentPlayer;
-            }
-            return neuralInputs;
-        }
+        constexpr float getBoardScore() const { return 0.f; }
+
+        constexpr float *getNetworkInputs() { return &neuralInputs[0]; }
+
+        constexpr void randomize() {}
     };
 
     static_assert([]
@@ -2305,7 +2533,59 @@ int shallowestTerminalDepth = 9999;
     todo: http://www.incompleteideas.net/609%20dropbox/other%20readings%20and%20resources/MCTS-survey.pdf
 */
 
-/* Whatever we conceive well we express clearly, and words flow with ease. (Nicolas Boileau-Despreaux) */
+
+
+/*
+    NOTE: This file is auto-generated by generate.py from isprime.S.
+    Do not edit this file directly.
+*/
+
+// Only enable for GCC/Clang on x86-64 where this syntax is valid.
+#if defined(__GNUC__) && defined(__x86_64__)
+
+
+// The 'naked' attribute tells GCC not to generate a function prologue/epilogue,
+// as we provide it ourselves in the assembly code.
+__attribute__((naked))
+int is_prime(int n) {
+    // The 'volatile' keyword prevents the compiler from optimizing this block away.
+    __asm__ __volatile__(
+                ".intel_syntax noprefix\n\t"
+        "is_prime:\n\t"
+        "push rbp\n\t"
+        "mov rbp, rsp\n\t"
+        "mov DWORD PTR [rbp-4], edi        ; store n into local var\n\t"
+        "cmp DWORD PTR [rbp-4], 2\n\t"
+        "jl .not_prime\n\t"
+        "mov DWORD PTR [rbp-8], 2\n\t"
+        ".loop:\n\t"
+        "mov eax, DWORD PTR [rbp-8]        ; eax = i\n\t"
+        "imul eax, eax                     ; eax = i * i\n\t"
+        "cmp eax, DWORD PTR [rbp-4]        ; if (i*i > n) break\n\t"
+        "jg .is_prime\n\t"
+        "mov eax, DWORD PTR [rbp-4]        ; eax = n\n\t"
+        "xor edx, edx\n\t"
+        "mov ecx, DWORD PTR [rbp-8]        ; ecx = i\n\t"
+        "idiv ecx                          ; eax=n/i, edx=n%i\n\t"
+        "cmp edx, 0                        ; if (n % i == 0)\n\t"
+        "je .not_prime\n\t"
+        "add DWORD PTR [rbp-8], 1          ; i++\n\t"
+        "jmp .loop\n\t"
+        ".is_prime:\n\t"
+        "mov eax, 1                        ; return 1 (true)\n\t"
+        "pop rbp\n\t"
+        "ret\n\t"
+        ".not_prime:\n\t"
+        "mov eax, 0                        ; return 0 (false)\n\t"
+        "pop rbp\n\t"
+        "ret\n\t"
+        ".att_syntax prefix"
+    );
+}
+
+
+#endif // __GNUC__ && __x86_64__
+
 
 
 } // namespace include_ai
@@ -2351,5 +2631,9 @@ WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
 OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
+
+
+/* Whatever we conceive well we express clearly, and words flow with ease. (Nicolas Boileau-Despreaux) */
+
 
 

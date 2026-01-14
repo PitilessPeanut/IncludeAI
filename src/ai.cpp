@@ -71,6 +71,8 @@
 
         constexpr int getWinner() const { return winner; }
 
+        constexpr float getBoardScore() const { return 0.f; }
+
         constexpr float *getNetworkInputs() { return &neuralInputs[0]; }
 
         constexpr void randomize() {}

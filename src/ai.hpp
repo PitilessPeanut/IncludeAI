@@ -35,13 +35,13 @@ namespace include_ai {
     inline constexpr T aiMax(T x, T y) { return x > y ? x : y; }
 
 // assert/debug
-    #if defined(AI_DEBUG)
+  //  #if defined(AI_DEBUG)
       #define aiAssert(x) assert(x)
-      #define aiDebug(x) x
-    #else
-      #define aiAssert(x)
-      #define aiDebug(x)
-    #endif
+ //     #define aiDebug(x) x
+  //  #else
+  //    #define aiAssert(x)
+   //   #define aiDebug(x)
+    //#endif
 
 
 /****************************************/
@@ -69,8 +69,6 @@ namespace include_ai {
 /* information)                         */
 /****************************************/
     template <typename T>
-    concept convertible_to_float = std::convertible_to<T, DOUBLE> || std::convertible_to<T, FLOAT>;
-    template <typename T>
     concept convertible_to_ptrFloat = std::convertible_to<T, DOUBLE *> || std::convertible_to<T, FLOAT *>;
 
     template <typename T>
@@ -80,14 +78,18 @@ namespace include_ai {
         !std::copyable<T> &&
         requires (T obj, const T cobj)
         {
+            // todo: how to require noexcept?
             {cobj.clone()} -> std::same_as<T>;
             {cobj.generateMovesAndGetCnt(nullptr)} -> std::convertible_to<int>;
             {obj.doMove(typename T::Move{})} -> std::same_as<Outcome>;
             {obj.switchPlayer()};
             {cobj.getCurrentPlayer()} -> std::equality_comparable;
             {cobj.getWinner()} -> std::equality_comparable;
+            {cobj.getBoardScore()} -> std::convertible_to<FLOAT>;
             {obj.getNetworkInputs()} -> convertible_to_ptrFloat;
             {obj.randomize()};
+            //{ T::MaxNetworkInputs } -> std::convertible_to<std::size_t>; // todo
+            //requires std::bool_constant<T::MaxNetworkInputs >= 0>::value;
         };
 
 
@@ -114,6 +116,7 @@ namespace include_ai {
         SWORD    visits = 1; // Must be '1' to stop 'nan' // todo if changed also chage in ucbselect()!
         FLOAT    UCBscore;         // Placeholder used during UCB calc.
         #ifdef INCLUDEAI__ADD_SCORE_FOR_TERMINAL_NODES
+        // todo: this could be removed. is it redundant if we have cutoff depth?
           FLOAT    terminalScore = 0.f; // Keeping another separate score for terminal nodes may not make sense,
                                         // since a terminal condition may pop up at any level of the tree,
                                         // which means that by the time we are back at the root, a wrong node
@@ -122,11 +125,11 @@ namespace include_ai {
 SWORD branchScore = 0;
 int shallowestTerminalDepth = 9999;
 
-        constexpr Node()
+        constexpr Node() noexcept
           : moveHere{}
         {}
 
-        constexpr Node(Node *newParent, Move move)
+        constexpr Node(Node *newParent, Move move) noexcept
           : activeBranches(never_expanded),
             parent(newParent),
             // Ownership is implicit: the 'owner' is the player who makes this move!
@@ -136,7 +139,7 @@ int shallowestTerminalDepth = 9999;
         Node(const Node&)            = delete;
         Node& operator=(const Node&) = delete;
         Node(Node&&)                 = delete;
-        Node& operator=(Node&& other)
+        Node& operator=(Node&& other) noexcept
         {
             if (this != &other)
             {
@@ -172,51 +175,9 @@ int shallowestTerminalDepth = 9999;
         BitAlloc<NumNodes, BitfieldType> bitalloc;
         Node<MoveType> nodePool[NumNodes];
 
-        //static constexpr int maxPatterns = MaxPatterns;
-        //int storedPatterns = 0;
-        //Pattern patterns[maxPatterns];
-        //float maxPatternSimilarity = 1.f;
-
         Ai_ctx() {}
         Ai_ctx(const Ai_ctx&) = delete;
         Ai_ctx& operator=(const Ai_ctx&) = delete;
-
-        //template <Gameview Board>
-        //void collectPattern(Board& current)
-        //{
-        //    const Pattern *ptrInputs = current.getNextPattern();
-        //    while (ptrInputs != nullptr)
-        //    {
-        //        if (storedPatterns < maxPatterns)
-        //        {
-        //            Pattern& target = patterns[storedPatterns];
-        //            for (int i=0; i<target.patternSize; ++i)
-        //                target.pattern[i] = ptrInputs->pattern[i];
-        //            storedPatterns += 1;
-        //        }
-        //        else
-        //        {
-        //            maxPatternSimilarity = diversify(patterns, *ptrInputs, maxPatterns);
-        //        }
-        //        ptrInputs = current.getNextPattern();
-        //    }
-        //}
-//
-        //template <Gameview Board>
-        //void train(Board& current)
-        //{
-        //    const Pattern *ptrInputs = current.getNextPattern();
-        //    // todo
-        //}
-//
-        //template <Gameview Board>
-        //float query(Board& current) const
-        //{
-        //    // todo
-        //    const float win  = 1;// inputs[0];
-        //    const float lose = 1; //-inputs[1];
-        //    return (win+lose) / 2.f;
-        //}
     };
 
 
@@ -263,7 +224,7 @@ int shallowestTerminalDepth = 9999;
         const auto     removedVisits   = swapDst.visits;
         const auto     removedScore    = swapDst.score;
         const auto     removedBranchScore = swapDst.branchScore;
-        const auto    removedShallowestTerminalDepth = swapDst.shallowestTerminalDepth;
+        const auto     removedShallowestTerminalDepth = swapDst.shallowestTerminalDepth;
 
         Node<MoveType>& swapSrc = parent->branches[parent->activeBranches-1];
 
@@ -335,7 +296,7 @@ int shallowestTerminalDepth = 9999;
         // Run simulations:
         for (int i=0; i<MaxRandSims; ++i)
         {
-            Board boardSim = original.clone();
+            Board boardSim = original.clone(); // todo: randomize?
             // Start single sim, run until end:
             auto outcome = Outcome::running;
             do
@@ -363,6 +324,9 @@ int shallowestTerminalDepth = 9999;
 
 /****************************************/
 /*                              Minimax */
+/* A board.clone() arrivig here has     */
+/* probably already been randomized.    */
+/* Randomization does not work here   */
 /****************************************/
     constexpr SWORD MinimaxWin              =   1;
     constexpr SWORD MinimaxDraw             =   0;
@@ -379,6 +343,7 @@ int shallowestTerminalDepth = 9999;
         if (depth==0) { return MinimaxIndeterminable; }
 
         Board clone = current.clone();
+        const auto playerBefore = clone.getCurrentPlayer();
         clone.switchPlayer();
         const Outcome outcome = clone.doMove(move);
         if (outcome != Outcome::running)
@@ -390,6 +355,8 @@ int shallowestTerminalDepth = 9999;
             else
                 return MinimaxWin;
         }
+        const auto playerAfter = clone.getCurrentPlayer();
+        const SWORD polarity = (playerBefore==playerAfter) ? 1 : -1;
         typename Board::StorageForMoves storageForMoves;
         int nMoves = clone.generateMovesAndGetCnt(storageForMoves);
         nMoves -= 1;
@@ -397,7 +364,7 @@ int shallowestTerminalDepth = 9999;
         while (nMoves >= 0)
         {
             const MoveType moveHere = storageForMoves[nMoves];
-            const SWORD mnx = -minimax(clone, moveHere, -beta, -alpha, depth-1);
+            const SWORD mnx = polarity * minimax(clone, moveHere, beta*polarity, alpha*polarity, depth-1);
             minimaxScore = aiMax(minimaxScore, mnx);
             alpha        = aiMax(alpha, mnx);
             // Alpha-Beta Pruning (Thank you AI!!!!):
@@ -413,7 +380,10 @@ int shallowestTerminalDepth = 9999;
     inline constexpr SWORD minimax(const Board& current, const int MaxDepth)
     {
         Board clone = current.clone();
+
+        const auto playerBefore = clone.getCurrentPlayer();
         clone.switchPlayer();
+        const auto playerAfter = clone.getCurrentPlayer();
         typename Board::StorageForMoves storageForMoves;
         int nMoves = clone.generateMovesAndGetCnt(storageForMoves);
         nMoves -= 1;
@@ -421,7 +391,11 @@ int shallowestTerminalDepth = 9999;
         while (nMoves >= 0)
         {
             const MoveType moveHere = storageForMoves[nMoves];
-            const SWORD mnx = -minimax(clone, moveHere, MinimaxLose-1, MinimaxWin+1, MaxDepth);
+            SWORD mnx;
+            if (playerBefore==playerAfter)
+                mnx = minimax(clone, moveHere, MinimaxLose, MinimaxWin, MaxDepth);
+                else
+                mnx = -minimax(clone, moveHere, MinimaxLose/*-1*/, MinimaxWin/*+1*/, MaxDepth);
             if (mnx > best)
                 best = mnx;
             nMoves -= 1;
@@ -436,7 +410,10 @@ int shallowestTerminalDepth = 9999;
     template <GameMove MoveType>
     struct MCTS_result
     {
-        enum { simulations, minimaxes, maxPatternSimilarity, end };
+        enum { simulations, minimaxes, thresholdReset, networkEvaluated, terminalReached,
+               score, visits,
+               end
+             };
         int statistics[end] = {0};
         MoveType best;
     };
@@ -469,7 +446,7 @@ int shallowestTerminalDepth = 9999;
               typename NN,
               typename Rndfunc
              >
-    constexpr MCTS_result<MoveType> mcts(const Board& boardOriginal, AiCtx& ai_ctx, NN& nn, Rndfunc rand)
+    constexpr MCTS_result<MoveType> mcts(const Board& boardOriginal, AiCtx& ai_ctx, NN& nn, Rndfunc rand) noexcept
     {
         [[maybe_unused]] auto UCBselectBranch =
             [](const Node<MoveType>& node) -> Node<MoveType> *
@@ -559,7 +536,7 @@ int shallowestTerminalDepth = 9999;
         }
 
         int cutoffDepth = 9999;
-        FLOAT threshold = 1.f; // 'threshold' above which the result of the board score is used, not minimax or randroll
+        FLOAT threshold = 1.f; // 'threshold' above which the result of .evaluate() is used, not minimax or randroll
         SWORD rootMovesRemaining;
         MCTS_result<MoveType> mcts_result;
         for (int iterations=0; root->activeBranches!=0 && iterations<MaxIterations; ++iterations)
@@ -654,7 +631,7 @@ int shallowestTerminalDepth = 9999;
                     std::printf("\033[1;35mexceeded! %d vs  %d \n\033[0m", ai_ctx.numNodes, nodePos+nValidMoves);
                     // Can't be salvaged. Once we are out of nodes we can't release already
                     // alloc'd branches (cuz we must reach a terminal node for that). We are stuck:
-                    aiAssert(false);
+                    //aiAssert(false);
                     break;
                     //nValidMoves = nValidMoves - ((nodePos+nValidMoves)-nValidMoves);
                     //nValidMoves -= 1;
@@ -765,8 +742,9 @@ int shallowestTerminalDepth = 9999;
                   const SWORD polarity = boardClone.getWinner()!=boardOriginal.getCurrentPlayer() ? -1 : 1;
                 #endif
 
-                const FLOAT *pConfidence = nn.evaluate(boardClone.getNetworkInputs());
-                const FLOAT confidence = pConfidence[0];
+                const FLOAT *pValues = nn.evaluate(boardClone.getNetworkInputs(), boardClone.getBoardScore());
+                const FLOAT confidence = pValues[0];
+                aiAssert(confidence<1.1f && confidence>-1.1f);
                 if (aiAbs(confidence) < threshold)
                 {
                     const SWORD branchscore = minimax<Board, MoveType>(boardClone, MinimaxDepth) * polarity;
@@ -778,7 +756,11 @@ int shallowestTerminalDepth = 9999;
                         score *= polarity-0.f;
                         mcts_result.statistics[MCTS_result<MoveType>::simulations] += 1;
                         // worst case: no clear result. Adjust threshold:
-                        if (aiAbs(score) <= 0.1f) threshold = 0.f;
+                        if (aiAbs(score) <= 0.1f)
+                        {
+                            threshold = 0.f;
+                            mcts_result.statistics[MCTS_result<MoveType>::thresholdReset] += 1;
+                        }
                     }
                     else
                     {
@@ -795,8 +777,7 @@ int shallowestTerminalDepth = 9999;
                 else
                 {
                     score = confidence * (polarity-0.f);
-                    // todo: You might want a statistic for this path too.
-                    // mcts_result.statistics[...]++;
+                    mcts_result.statistics[MCTS_result<MoveType>::networkEvaluated] += 1;
                 }
             }
             else // This is a terminal node (game ended here)
@@ -817,6 +798,7 @@ int shallowestTerminalDepth = 9999;
                     #endif
                 }
                 disconnect = true;
+                mcts_result.statistics[MCTS_result<MoveType>::terminalReached] += 1;
             }
 
 
@@ -1016,7 +998,11 @@ int shallowestTerminalDepth = 9999;
             std::printf("threshold: %.2f mv: %d \033[1;31mcutoff: %d\033[0m ACT:%d \n",
                           threshold, root->branches[posScore].moveHere, cutoffDepth, root->activeBranches ); //, ai_ctx.maxPatternSimilarity);
 
-            //mcts_result.statistics[MCTS_result<MoveType>::maxPatternSimilarity] = ai_ctx.maxPatternSimilarity*100;
+
+
+
+            mcts_result.statistics[MCTS_result<MoveType>::score]  = bestScore * 100.f;
+            mcts_result.statistics[MCTS_result<MoveType>::visits] = bestVisits;
             mcts_result.best = [root, posVisits, posScore, bestScore]
                                {
                                    if (bestScore > 0.f)
@@ -1036,7 +1022,7 @@ int shallowestTerminalDepth = 9999;
               typename AiCtx,
               typename Rndfunc
              >
-    MCTS_Future<MoveType> mcts_async(const Board& boardOriginal, AiCtx& ai_ctx, Rndfunc rand)
+    MCTS_Future<MoveType> mcts_async(const Board& boardOriginal, AiCtx& ai_ctx, Rndfunc rand) noexcept
     {
         // https://github.com/cdwfs/cds_sync/blob/master/cds_sync.h
         using atomic = int;

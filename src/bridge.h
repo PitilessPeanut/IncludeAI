@@ -12,7 +12,7 @@ extern "C" {
 
     /* Calling outside: */
     //unsigned gaem_rand(void *pEverything);
-    int gaem_scan(void *pEverything);
+    void gaem_scan(void *pEverything, void *dst);
     void gaem_draw(void *pEverything, const unsigned *updatesVrt, int size);
     void gaem_debugPrint(void *pEverything, const char *debugStr);
 
