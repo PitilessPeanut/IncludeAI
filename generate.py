@@ -220,7 +220,7 @@ merge_result = """/*
 */\n\n"""
 
 license = """\n/*
-Copyright (c) 2025, VECTORPHASE Systems
+Copyright (c) 2025-2026, VECTORPHASE Systems
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -269,18 +269,21 @@ merge_result += """#include <cmath>
 #elif defined(__wasm_simd128__)
   #include <wasm_simd128.h>
 #else
-  #error "unknown arch! (if compiling for wasm use '-msimd128' to fix)"
+  #error "unknown arch! (if compiling for wasm try using '-msimd128', on intel '-march=native')"
 #endif\n\n
 namespace include_ai {\n\n\n
 """
 
 remove = ["#include", "_HPP", "double include", "AVX", "NEON", "defined(__wasm_simd128__)", "nothing?", "unknown", "namespace include_ai"]
+dontRemove = ["__AVX512FP16"]
 
 for filename, _ in unique: # 'unique' tuple is unpacked as (filename, dependencies)
     f = open(filename, "r")
     lines = f.readlines()
     for code_line in lines:
-        if any(x in code_line for x in remove):
+        should_remove = any(x in code_line for x in remove)
+        should_keep = any(x in code_line for x in dontRemove)
+        if should_remove and not should_keep:
             pass
         else:
             merge_result += code_line

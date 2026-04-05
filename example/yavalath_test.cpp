@@ -1,9 +1,10 @@
-#define INCLUDEAI_IMPLEMENTATION
 #include <vector>
 #include <algorithm>
 #include <bitset>
 #include <cstdio>
 #include <unistd.h>
+#include <assert.h>
+#define INCLUDEAI_IMPLEMENTATION
 #include "../includeai.hpp"
 
 using namespace include_ai;
@@ -41,8 +42,6 @@ public:
     unsigned char board[11*11];
 private:
     int currentPlayer = 1, winner;
-    Pattern<CELLS+CELLS> patternInputs;
-    int getNextPatternCtr = 0;
 public:
     std::bitset<128> openpos;
 public:
@@ -162,33 +161,11 @@ public:
 
     int getWinner() const { return winner; }
 
-    Pattern<CELLS+CELLS> *getNetworkInputs()
-    {
-        if (getNextPatternCtr == 1)
-        {
-            getNextPatternCtr = 0;
-            return nullptr;
-        }
-        getNextPatternCtr = 1;
+    float getBoardScore() const { return 0.f; }
 
-        constexpr int indeces[CELLS] = {
-                                16, 17, 18, 19, 20,
-                            26, 27, 28, 29, 30, 31,
-                        36, 37, 38, 39, 40, 41, 42,
-                    46, 47, 48, 49, 50, 51, 52, 53,
-                56, 57, 58, 59, 60, 61, 62, 63, 64,
-                67, 68, 69, 70, 71, 72, 73, 74,
-                78, 79, 80, 81, 82, 83, 84,
-                89, 90, 91, 92, 93, 94,
-                100,101,102,103,104
-            };
-        for (int i=0; i<CELLS; ++i)
-        {
-            patternInputs.pattern[i      ] = board[indeces[i]] == (currentPlayer+248);
-            patternInputs.pattern[i+CELLS] = board[indeces[i]] != (currentPlayer+248);
-        }
-        return &patternInputs;
-    }
+    float *getNetworkInputs() { return nullptr; }
+
+     constexpr void randomize() {}
 
     constexpr void reset()
     {
@@ -235,8 +212,17 @@ struct YavalathAiMCTS : YavalathPlayerBase
             return (121/2) + offsets[pcgRand<UDWORD>() % 24];
         }
         constexpr int simDepth=21, minimaxDepth=3;
+        struct NeuralDummy
+        {
+            FLOAT x;
+            FLOAT *evaluate(const FLOAT *inputs, const FLOAT boardScore)
+            {
+                x = boardScore;
+                return &x;
+            }
+        } dummy_nn;
         const MCTS_result<YavalathBoard::Move> res =
-            mcts<4800, simDepth, minimaxDepth, YavalathBoard::Move, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
+            mcts<4800, simDepth, minimaxDepth, YavalathBoard::Move, UQWORD>(original, ai_ctx, dummy_nn, []{return pcgRand<UDWORD>();});
         std::printf("simulations: %d, minimaxes: %d \n", res.statistics[MCTS_result<YavalathBoard::Move>::simulations], res.statistics[MCTS_result<YavalathBoard::Move>::minimaxes]);
         return res.best;
     }

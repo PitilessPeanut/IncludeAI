@@ -87,6 +87,10 @@ public:
 
     int getWinner() const { return winner; }
 
+    float getBoardScore() const { return 0.f; }
+
+    float *getNetworkInputs() { return nullptr; }
+
     void randomize() {}
 
     void reset()
@@ -119,19 +123,21 @@ struct TicTacPlayer : TicTacPlayerBase
 struct TicTacAiMCTS : TicTacPlayerBase
 {
     Ai_ctx<13000, TicTacBoard::Move, UQWORD> ai_ctx;
-    static constexpr int simDepth=9, minimaxDepth=9;
-
+    static constexpr int simDepth=0, minimaxDepth=9;
+    struct NeuralDummy
+    {
+        FLOAT x;
+        FLOAT *evaluate(const FLOAT *inputs, const FLOAT boardScore)
+        {
+            x = boardScore;
+            return &x;
+        }
+    } dummy_nn;
     TicTacBoard::Move selectMove([[maybe_unused]] const TicTacBoard& original, [[maybe_unused]] const int input) override
     {
         const auto res =
-            mcts<150, simDepth, minimaxDepth, int, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
+            mcts<150, simDepth, minimaxDepth, int, UQWORD>(original, ai_ctx, dummy_nn, []{return pcgRand<UDWORD>();});
         return res.best;
-
-        /*
-        const MCTS_result<YavalathBoard::YavMove> res =
-            mcts<400, simDepth, minimaxDepth, YavalathBoard::YavMove, UQWORD>(original, ai_ctx, []{return pcgRand<UDWORD>();});
-        s
-        */
     }
 };
 

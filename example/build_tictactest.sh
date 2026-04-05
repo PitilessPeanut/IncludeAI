@@ -9,8 +9,10 @@ set -euo pipefail
 # -Wimplicit-fallthrough # warn missing [[fallthrough]]
 # -Wundef # Macros must be defined
 
+rm -f tictac_test
+
 clang++ -I../src -std=c++20 -fno-exceptions -fno-rtti \
         -pedantic -ffast-math -Wno-unknown-warning-option \
         -Wno-misleading-indentation -Wno-different-indent \
         -finput-charset=UTF-8 -Wall -Wextra -Oz -flto \
-        ./tictac_test.cpp ../src/bitalloc.cpp ../src/micro_math.cpp ../src/similarity.cpp -o tictac_test
+        ./tictac_test.cpp ../src/bitalloc.cpp ../src/micro_math.cpp ../src/neural.cpp ../src/ai.cpp -o tictac_test
