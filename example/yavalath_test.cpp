@@ -49,6 +49,7 @@ public:
     YavalathBoard(const YavalathBoard&) = delete;
     YavalathBoard& operator=(const YavalathBoard&) = delete;
     YavalathBoard(YavalathBoard&&) = default;
+    YavalathBoard& operator=(YavalathBoard&&) = default;
 
     constexpr YavalathBoard clone() const
     {
@@ -211,7 +212,7 @@ struct YavalathAiMCTS : YavalathPlayerBase
             constexpr int offsets[] = {-33,-30,-22,-21,-20,-12,-11,-10,-9, -3,-2,-1, 1,2,3, 9,10,11,12,20,21,22,30,33};
             return (121/2) + offsets[pcgRand<UDWORD>() % 24];
         }
-        constexpr int simDepth=21, minimaxDepth=3;
+        constexpr int simDepth=21, minimaxDepth=2;
         struct NeuralDummy
         {
             FLOAT x;
@@ -222,7 +223,7 @@ struct YavalathAiMCTS : YavalathPlayerBase
             }
         } dummy_nn;
         const MCTS_result<YavalathBoard::Move> res =
-            mcts<4800, simDepth, minimaxDepth, YavalathBoard::Move, UQWORD>(original, ai_ctx, dummy_nn, []{return pcgRand<UDWORD>();});
+            mcts<480, simDepth, minimaxDepth, YavalathBoard::Move, UQWORD>(original, ai_ctx, dummy_nn, []{return pcgRand<UDWORD>();});
         std::printf("simulations: %d, minimaxes: %d \n", res.statistics[MCTS_result<YavalathBoard::Move>::simulations], res.statistics[MCTS_result<YavalathBoard::Move>::minimaxes]);
         return res.best;
     }
@@ -238,13 +239,13 @@ struct YavalathAiMCTS : YavalathPlayerBase
 int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[])
 {
     YavalathPlayer h1, h2;
-    std::vector<YavalathAiMCTS> ai(2);
+    std::vector<YavalathAiMCTS> ai(1);
     int scores[3] = {0, 0, 0};
     int draws = 0;
 
     for (int tests=0; tests<900; ++tests)
     {
-        YavalathPlayerBase *players[3] = { nullptr, &h1, &ai[1] };
+        YavalathPlayerBase *players[3] = { nullptr, &h1, &ai[0] };
 
         YavalathBoard yavalathBoard;
         yavalathBoard.switchPlayer(); // switch back to player 1 after start

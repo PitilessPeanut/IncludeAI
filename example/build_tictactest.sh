@@ -11,8 +11,9 @@ set -euo pipefail
 
 rm -f tictac_test
 
-clang++ -I../src -std=c++20 -fno-exceptions -fno-rtti \
+g++ -I../src -std=c++20 -fno-exceptions -fno-rtti \
+        -march=native -g \
         -pedantic -ffast-math -Wno-unknown-warning-option \
         -Wno-misleading-indentation -Wno-different-indent \
-        -finput-charset=UTF-8 -Wall -Wextra -Oz -flto \
+        -finput-charset=UTF-8 -Wall -Wextra -O0 -flto \
         ./tictac_test.cpp ../src/bitalloc.cpp ../src/micro_math.cpp ../src/neural.cpp ../src/ai.cpp -o tictac_test

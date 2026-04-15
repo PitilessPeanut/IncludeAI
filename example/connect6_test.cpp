@@ -2,6 +2,7 @@
 #include <memory>
 #define INCLUDEAI_IMPLEMENTATION
 #include <assert.h>
+#include <unistd.h>
 #include "../includeai.hpp"
 
 
@@ -14,6 +15,7 @@ public:
     static constexpr int WIDTH = 13;//19;
     static constexpr int HEIGHT = 13;//19;
     static constexpr int CELLS = WIDTH * HEIGHT;
+    static constexpr int MaxNetworkInputs = CELLS + 1;
     using Move = int; // Represents a linear index (y * WIDTH + x)
     using StorageForMoves = Move[CELLS];
     int board[CELLS];
@@ -21,6 +23,7 @@ private:
     int currentPlayer = 1; // 1 (Black) starts
     int winner = 0;
     int stonesPlaced = 0;
+    float networkInputs[MaxNetworkInputs];
     constexpr bool checkWin(const int idx) const
     {
         const int x = idx % WIDTH;
@@ -108,23 +111,13 @@ public:
                     if (board[y * WIDTH + x] != 0)
                     {
                         relevant = true;
-                        goto found_neighbor; // Break out of nested loops
+                        goto found_neighbor;
                     }
                 }
             }
             found_neighbor:
             if (relevant)
-            {
                 availMoves[availMovesCtr++] = i;
-            }
-        }
-        // Fallback: In the extremely rare case that stones exist but we found
-        // no relevant moves (e.g., custom board setup), fills all empty spots
-        // to prevent crash:
-        if (availMovesCtr == 0 && stonesPlaced < CELLS)
-        {
-             for (int i = 0; i < CELLS; ++i)
-                if (board[i] == 0) availMoves[availMovesCtr++] = i;
         }
         return availMovesCtr;
     }
@@ -154,7 +147,21 @@ public:
 
     float getBoardScore() const { return 0.f; }
 
-    float *getNetworkInputs() { return nullptr; }
+    float *getNetworkInputs()
+    {
+        for (int i = 0; i < CELLS; ++i)
+        {
+            if (board[i] == 0) // Empty
+                networkInputs[i] = 0.0f;
+            else if (board[i] == currentPlayer) // Our stones
+                networkInputs[i] = 1.0f;
+            else // Opponent stones
+                networkInputs[i] = -1.0f;
+        }
+        // Track turn parity (Are we placing the 1st or 2nd stone of our turn?)
+        networkInputs[CELLS] = (stonesPlaced % 2 == 0) ? -1.0f : 1.0f;
+        return networkInputs;
+    }
 
     constexpr void randomize() {}
 
@@ -199,11 +206,13 @@ public:
 
 struct Connect6PlayerBase
 {
+    static constexpr auto halfHeight = Connect6Board::HEIGHT / 2;
+    static constexpr auto halfWidth = Connect6Board::WIDTH / 2;
     virtual Connect6Board::Move selectMove(const Connect6Board&) = 0;
     virtual ~Connect6PlayerBase() = default;
 };
 
-struct Connect6HumanPlayer : Connect6PlayerBase
+struct Connect6PlayerLocal : Connect6PlayerBase
 {
     Connect6Board::Move selectMove(const Connect6Board& original) override
     {
@@ -231,16 +240,10 @@ struct Connect6AiMCTS : Connect6PlayerBase
 {
     std::unique_ptr<Ai_ctx<280000, Connect6Board::Move, UQWORD>> ai_ctx =
         std::make_unique<Ai_ctx<280000, Connect6Board::Move, UQWORD>>();
-    bool fresh = true;
     Connect6Board::Move selectMove(const Connect6Board& original) override
     {
-        constexpr auto halfHeight = Connect6Board::HEIGHT / 2;
-        constexpr auto halfWidth = Connect6Board::WIDTH / 2;
-        if (fresh && original.board[halfHeight*Connect6Board::WIDTH+halfWidth] == 0)
-        {
-            fresh = false;
+        if (original.board[halfHeight*Connect6Board::WIDTH+halfWidth] == 0)
             return halfHeight*Connect6Board::WIDTH + halfWidth; // Center
-        }
         constexpr int simDepth = 5; // Shorter depth for Connect6 due to branching factor
         constexpr int minimaxDepth = 2;
         struct NeuralDummy
@@ -252,13 +255,16 @@ struct Connect6AiMCTS : Connect6PlayerBase
                 return &x;
             }
         } dummy_nn;
+        const auto start = std::chrono::high_resolution_clock::now();
         const MCTS_result<Connect6Board::Move> res =
-            mcts<1500, simDepth, minimaxDepth, Connect6Board::Move, UQWORD>(
+            mcts<150, simDepth, minimaxDepth, Connect6Board::Move, UQWORD>(
                 original,
                 *ai_ctx,
                 dummy_nn,
                 []{ return pcgRand<UDWORD>(); }
             );
+        const auto end = std::chrono::high_resolution_clock::now();
+        const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         using Res = MCTS_result<Connect6Board::Move>;
         std::printf("AI Stats - sims: %.0f | minmax: %.0f | thrLvl: %1.2f | netEvals: %.0f | terminals: %.0f | bestScore: %.2f | visits: %.0f \n",
             res.statistics[Res::simulations],
@@ -269,6 +275,7 @@ struct Connect6AiMCTS : Connect6PlayerBase
             res.statistics[Res::score],
             res.statistics[Res::visits]
         );
+        std::printf("time taken: %lld ms\n", duration.count());
         if (res.errorOutOfMem)
             std::printf("\033[1;30mWarning: MCTS ran out of memory and may return suboptimal move.\n\033[0m");
         return res.best;
@@ -304,6 +311,7 @@ constexpr int aiMinimax(const Connect6Board& current, const Connect6Board::Move 
             returnedScore = -aiMinimax(clone, moveHere, -beta, -alpha, depth-1);
         minimaxScore = aiMax(minimaxScore, returnedScore);
         alpha        = aiMax(alpha, minimaxScore);
+        if (minimaxScore == MinimaxWin) break;
         if (beta <= alpha) {
             break; // Beta Cutoff
         }
@@ -316,8 +324,6 @@ struct Connect6AiMinimax : Connect6PlayerBase
 {
     Connect6Board::Move selectMove(const Connect6Board& original) override
     {
-        constexpr auto halfHeight = Connect6Board::HEIGHT / 2;
-        constexpr auto halfWidth = Connect6Board::WIDTH / 2;
         if (original.board[halfHeight * Connect6Board::WIDTH + halfWidth] == 0)
             return halfHeight * Connect6Board::WIDTH + halfWidth;
         typename Connect6Board::StorageForMoves storageForMoves;
@@ -325,32 +331,92 @@ struct Connect6AiMinimax : Connect6PlayerBase
         nMoves -= 1;
         int bestScore = MinimaxInit;
         int bestPos = 0;
-        constexpr int MAX_DEPTH = 3;
+        int alpha = MinimaxLose;
+        constexpr int MAX_DEPTH = 4;
         while (nMoves >= 0)
         {
             const Connect6Board::Move moveHere = storageForMoves[nMoves];
-            const int mnx = aiMinimax(original, moveHere, MinimaxLose-1, MinimaxWin+1, MAX_DEPTH);
+            const int mnx = aiMinimax(original, moveHere, alpha, MinimaxWin, MAX_DEPTH);
             if (mnx > bestScore)
             {
                 bestScore = mnx;
                 bestPos = moveHere;
+                alpha = aiMax(alpha, bestScore);
             }
-            if (mnx == MinimaxWin) break;
+            if (bestScore == MinimaxWin) break;
             nMoves -= 1;
         }
         return bestPos;
     }
 };
 
-
-
-
-int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[])
+struct Connect6AiNeural : Connect6PlayerBase
 {
-    Connect6HumanPlayer h1, h2;
+    struct NetRng { UDWORD operator()() { return pcgRand<UDWORD>(); } } netRng;
+    static constexpr int INPUTS = Connect6Board::MaxNetworkInputs;
+    static constexpr int OUTPUTS = 1, LAYERS = 3, HIDDEN_WIDTH = 96;
+    using MyNetwork = Neural<INPUTS, OUTPUTS, LAYERS, HIDDEN_WIDTH, NetRng>;
+    std::unique_ptr<MyNetwork> nn_ptr;
+    std::unique_ptr<Ai_ctx<280000, Connect6Board::Move, UQWORD>> ai_ctx;
+    struct NNAdapter
+    {
+        MyNetwork *net;
+        FLOAT *evaluate(const FLOAT* inputs, [[maybe_unused]] const FLOAT boardScore)
+        {
+            return net->evaluate(inputs);
+        }
+    } nn_adapter;
+
+    Connect6AiNeural()
+      : nn_ptr(std::make_unique<MyNetwork>(netRng)),
+        ai_ctx(std::make_unique<Ai_ctx<280000, Connect6Board::Move, UQWORD>>()),
+        nn_adapter{nn_ptr.get()}
+    {}
+
+
+
+    Connect6Board::Move selectMove(const Connect6Board& original) override
+    {
+        if (original.board[halfHeight*Connect6Board::WIDTH+halfWidth] == 0)
+            return halfHeight*Connect6Board::WIDTH + halfWidth; // Center
+        constexpr int simDepth = 5;
+        constexpr int minimaxDepth = 2;
+        const auto start = std::chrono::high_resolution_clock::now();
+        const MCTS_result<Connect6Board::Move> res =
+            mcts<150, simDepth, minimaxDepth, Connect6Board::Move, UQWORD>(
+                original,
+                *ai_ctx,
+                nn_adapter,
+                []{ return pcgRand<UDWORD>(); }
+            );
+        const auto end = std::chrono::high_resolution_clock::now();
+        const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        using Res = MCTS_result<Connect6Board::Move>;
+        std::printf("Neural Stats - sims: %.0f | minmax: %.0f | thrLvl: %1.2f | netEvals: %.0f | terminals: %.0f | bestScore: %.2f | visits: %.0f \n",
+            res.statistics[Res::simulations],
+            res.statistics[Res::minimaxes],
+            res.statistics[Res::thresholdLevel],
+            res.statistics[Res::networkEvaluated],
+            res.statistics[Res::terminalReached],
+            res.statistics[Res::score],
+            res.statistics[Res::visits]
+        );
+        std::printf("time taken: %lld ms\n", duration.count());
+        if (res.errorOutOfMem)
+            std::printf("\033[1;30mWarning: Neural ran out of memory and may return suboptimal move.\n\033[0m");
+        return res.best;
+    }
+};
+
+
+
+
+void playRegular()
+{
+    Connect6PlayerLocal h1, h2;
     Connect6AiMCTS ai;
     Connect6AiMinimax ai2;
-    Connect6PlayerBase *players[3] = { nullptr, &h1, &ai };
+    Connect6PlayerBase *players[3] = { nullptr, &h1, &ai2 };
     int scores[3] = {0, 0, 0};
     int draws = 0;
     for (int game = 0; game < 7; ++game)
@@ -391,4 +457,92 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[])
             board.switchPlayer();
         }
     }
+}
+
+
+
+
+void playTraining()
+{
+    struct TrainingSample
+    {
+        float boardState[Connect6Board::MaxNetworkInputs];
+        float gameOutcome; // Will be +1.0 (win), -1.0 (loss)
+    };
+    Connect6PlayerLocal h1;
+    Connect6AiMCTS aiMCTS;
+    Connect6AiNeural aiNeural;
+    int scores[3] = {0, 0, 0};
+    int lastMove = -1, prevMove = -1;
+    std::deque<TrainingSample> win_samples;
+    std::deque<TrainingSample> loss_samples;
+    for (int round=0; round<8000; ++round)
+    {
+        Connect6Board board;
+        std::vector<std::pair<std::vector<float>, int>> single_game_history;
+        Outcome outcome = Outcome::running;
+        Connect6PlayerBase *players[3] = { nullptr, &aiMCTS, &aiNeural };
+        if (round == 0)
+            players[1] = &h1;
+        while (outcome == Outcome::running)
+        {
+            const int currentPlayer = board.getCurrentPlayer();
+
+            const float *currentInputs = board.getNetworkInputs();
+
+            single_game_history.emplace_back(
+                std::vector<float>(currentInputs, currentInputs + board.MaxNetworkInputs),
+                currentPlayer
+            );
+
+            const Connect6Board::Move mv = players[currentPlayer]->selectMove(board);
+            outcome = board.doMove(mv);
+
+            // "prevMove" and "lastMove" used for highlight last moves:
+            prevMove = lastMove;
+            lastMove = mv;
+            //if (outcome == Outcome::fin)
+                //{
+                const int h2 = (board.getStone(prevMove) == board.getStone(lastMove)) ? prevMove : -1;
+                board.drawBoard(lastMove, h2);
+                //}
+
+                if (outcome == Outcome::draw)
+            {
+                board.drawBoard(lastMove, -1);
+            }
+            board.switchPlayer();
+        } // while (running == Outcome::running)
+
+        if (outcome == Outcome::fin)
+        {
+            const auto w = board.getWinner();
+            scores[w] += 1;
+            std::printf("\033[1;3%dmwinner: %d \033[0m scre: %d %d\n", w+1, w, scores[1], scores[2]);
+            float learning_rate = 0.001f;
+            float total_mse = 0.f;
+            for (auto& step : single_game_history)
+            {
+                const auto& [boardState, player] = step;
+                const float target = (player == board.getWinner()) ? 1.f : -1.f;
+                total_mse += aiNeural.nn_ptr->train(boardState.data(), &target, learning_rate);
+            }
+            std::printf("training MSE: %f\n", total_mse / single_game_history.size());
+        }
+        sleep(4+(pcgRand<UDWORD>()&1));
+
+        // Prevent samples from getting too big:
+        while (win_samples.size() > 2500)
+            win_samples.pop_front();
+        while (loss_samples.size() > 2500)
+            loss_samples.pop_front();
+    } // for round
+}
+
+
+
+
+int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[])
+{
+    playTraining();
 }

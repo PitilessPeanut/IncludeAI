@@ -12,18 +12,20 @@
 inline float sigmoid(float x) { return 1.0f / (1.0f + std::exp(-x)); }
 inline float sigmoid_derivative(float x) { return x * (1.0f - x); }
 inline float relu(float x) { return x > 0 ? x : 0.0001*x; }
-inline float relu_derivative(float x) { return x > 0 ? 1 : 0.0001*x; }
+//inline float relu_derivative(float x) { return x > 0 ? 1 : 0.0001*x; }
+inline float relu_derivative(float x) { return x > 0 ? 1.0f : 0.0001f; }
 using std::tanh;
-inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t * t; }
+inline float tanh_derivative(float y) { return 1.0f - y * y; }
 
 
 /****************************************/
 /*  feed forward 32 (this one is worse) */
 /****************************************/
-    template <int InputSize, int OutputSize, int Max_layers, typename Rng>
+    template <int InputSize, int OutputSize, int Max_layers, int HiddenWidth, typename Rng, int batchSize = 1>
     class FeedForward32
     {
     public:
+        static constexpr int columns = InputSize+((Max_layers-1)*HiddenWidth)+OutputSize;
         template <int Size>
         struct BitArray
         {
@@ -54,8 +56,7 @@ inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t 
             }
         };
     private:
-        static constexpr int columns = InputSize+(Max_layers*2)+OutputSize;
-        int nLayers = Max_layers;
+        static constexpr int nLayers = Max_layers;
         FLOAT weights[columns * columns];
         FLOAT biases[columns * Max_layers];
         BitArray<columns*columns> topologies[ Max_layers ];
@@ -302,10 +303,39 @@ inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t 
         {
             // Initialize weights/biases with random values in range [-1.0, 1.0]
             // should be ~symmetric around zero
-            for (int i = 0; i < columns * columns; ++i)
-                weights[i] = 2.0f * u64_to_float(rng()) - 1.0f;
-            for (int i = 0; i < columns * Max_layers; ++i)
-                biases[i] = 2.0f * u64_to_float(rng()) - 1.0f;
+            //for (int i = 0; i < columns * columns; ++i)
+            //    weights[i] = 2.0f * u64_to_float(rng()) - 1.0f;
+            //for (int i = 0; i < columns * Max_layers; ++i)
+            //    biases[i] = 2.0f * u64_to_float(rng()) - 1.0f;
+
+
+
+
+
+
+
+            // 1. Calculate hidden width to determine weight scaling
+                  const int hiddenSizex = (columns-(InputSize+OutputSize)) / (nLayers-1);
+
+                  // 2. He/Xavier Initialization: scale weights down so massive summations
+                  // don't blow out the Tanh Output derivative into 0.0!
+                  const FLOAT weight_scale = std::sqrt(2.0f / (FLOAT)(columns));
+
+                  for (int i = 0; i < columns * columns; ++i)
+                      weights[i] = (2.0f * u64_to_float(rng()) - 1.0f) * weight_scale;
+
+                  // 3. Initialize biases slightly positive to ensure ReLUs aren't born "dead"
+                  for (int i = 0; i < columns * Max_layers; ++i)
+                      biases[i] = 0.01f;
+
+
+
+
+
+
+
+
+
 
             // Initialize DAG:
             int from = InputSize*columns;
@@ -322,11 +352,13 @@ inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t 
                 for (int i=0; i<hiddenSize; ++i)
                 {
                     for (int j=0; j<hiddenSize; ++j)
-                        topologies[1].set(from + j, true);
+                        topologies[layer].set(from + j, true);
                     from += columns;
                 }
                 from += hiddenSize;
             }
+            const int current_src = from % columns; // Preserve previous layer's src offset
+            from = (columns - OutputSize) * columns + current_src; // Hard-align the dst
             for (int i=0; i<OutputSize; ++i)
             {
                 for (int j=0; j<hiddenSize; ++j)
@@ -339,7 +371,7 @@ inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t 
             {
                 for (int i=0; i<columns*columns; ++i)
                 {
-                    if (rng() % 100 < 15) // 15% chance to flip
+                    if (rng() % 100 < 25) // 25% chance to flip
                     {
                         const bool current = topologies[layer][i];
                         topologies[layer].set(i, !current);
@@ -356,6 +388,13 @@ inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t 
             // todo: tahn or softmax?
             forward<tanh>(nLayers-1, &activations[(nLayers-2)*columns], columns);
             return &activations[(nLayers-1)*columns];
+        }
+
+        FLOAT evaluateBatch()
+        {
+            // Not implemented yet, but the idea is to process multiple inputs in parallel using SIMD.
+            // This would require reorganizing the data layout to be more cache-friendly and SIMD-friendly.
+            return 0.0f;
         }
 
         FLOAT train(const FLOAT *inputs, const FLOAT *targets, FLOAT learning_rate)
@@ -416,21 +455,21 @@ inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t 
 /****************************************/
 /*           feed forward 16 (IEEE 754) */
 /****************************************/
-template <int InputSize, int OutputSize, int Max_layers, typename Rng>
-using FeedForward16 = FeedForward32<InputSize, OutputSize, Max_layers, Rng>;
+template <int InputSize, int OutputSize, int Max_layers, int HiddenWidth, typename Rng>
+using FeedForward16 = FeedForward32<InputSize, OutputSize, Max_layers, HiddenWidth, Rng>;
 // FLOAT masterCopy
 
 
 /****************************************/
-/*                     "Neural" Network */
+/*              "Neural Network" 🙄🙄🙄 */
 /****************************************/
 #if defined(__AVX512FP16__) || defined(__ARM_NEON) || defined(__wasm_simd128__)
-  template <int InputSize, int OutputSize, int Max_layers, typename Rng>
-  using Neural = FeedForward16<InputSize, OutputSize, Max_layers, Rng>;
+  template <int InputSize, int OutputSize, int Max_layers, int HiddenWidth, typename Rng>
+  using Neural = FeedForward16<InputSize, OutputSize, Max_layers, HiddenWidth, Rng>;
 #else
   // Of course not... 🙄
-  template <int InputSize, int OutputSize, int Max_layers, typename Rng>
-  using Neural = FeedForward32<InputSize, OutputSize, Max_layers, Rng>;
+  template <int InputSize, int OutputSize, int Max_layers, int HiddenWidth, typename Rng>
+  using Neural = FeedForward32<InputSize, OutputSize, Max_layers, HiddenWidth, Rng>;
 #endif
 
 

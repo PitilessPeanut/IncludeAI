@@ -19,6 +19,7 @@
         TicTacTest(const TicTacTest&) = delete;
         TicTacTest& operator=(const TicTacTest&) = delete;
         TicTacTest(TicTacTest&&) = default;
+        TicTacTest& operator=(TicTacTest&&) = default;
 
         constexpr TicTacTest clone() const
         {
@@ -190,20 +191,6 @@
                       return res == MinimaxWin; // 1
                   }()
                  );
-
-   /* static_assert([]
-                  {
-                      using namespace include_ai;
-                      TicTacTest t;
-                      t.pos[0]=1; t.pos[1]=2; t.pos[2]=0;
-                      t.pos[3]=0; t.pos[4]=0; t.pos[5]=0;
-                      t.pos[6]=0; t.pos[7]=0; t.pos[8]=0;
-                      t.currentPlayer = 1;
-                      HALF *networkInputs = t.getNetworkInputs();
-                      bool ok = networkInputs[0] < 1.f;
-                      return ok;
-                  }()
-                 );*/
 
 
 

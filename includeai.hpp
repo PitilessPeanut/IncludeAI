@@ -778,18 +778,20 @@ static_assert(sizeof(DOUBLE) == sizeof(UQWORD));
 inline float sigmoid(float x) { return 1.0f / (1.0f + std::exp(-x)); }
 inline float sigmoid_derivative(float x) { return x * (1.0f - x); }
 inline float relu(float x) { return x > 0 ? x : 0.0001*x; }
-inline float relu_derivative(float x) { return x > 0 ? 1 : 0.0001*x; }
+//inline float relu_derivative(float x) { return x > 0 ? 1 : 0.0001*x; }
+inline float relu_derivative(float x) { return x > 0 ? 1.0f : 0.0001f; }
 using std::tanh;
-inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t * t; }
+inline float tanh_derivative(float y) { return 1.0f - y * y; }
 
 
 /****************************************/
 /*  feed forward 32 (this one is worse) */
 /****************************************/
-    template <int InputSize, int OutputSize, int Max_layers, typename Rng>
+    template <int InputSize, int OutputSize, int Max_layers, int HiddenWidth, typename Rng, int batchSize = 1>
     class FeedForward32
     {
     public:
+        static constexpr int columns = InputSize+((Max_layers-1)*HiddenWidth)+OutputSize;
         template <int Size>
         struct BitArray
         {
@@ -820,8 +822,7 @@ inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t 
             }
         };
     private:
-        static constexpr int columns = InputSize+(Max_layers*2)+OutputSize;
-        int nLayers = Max_layers;
+        static constexpr int nLayers = Max_layers;
         FLOAT weights[columns * columns];
         FLOAT biases[columns * Max_layers];
         BitArray<columns*columns> topologies[ Max_layers ];
@@ -1065,10 +1066,39 @@ inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t 
         {
             // Initialize weights/biases with random values in range [-1.0, 1.0]
             // should be ~symmetric around zero
-            for (int i = 0; i < columns * columns; ++i)
-                weights[i] = 2.0f * u64_to_float(rng()) - 1.0f;
-            for (int i = 0; i < columns * Max_layers; ++i)
-                biases[i] = 2.0f * u64_to_float(rng()) - 1.0f;
+            //for (int i = 0; i < columns * columns; ++i)
+            //    weights[i] = 2.0f * u64_to_float(rng()) - 1.0f;
+            //for (int i = 0; i < columns * Max_layers; ++i)
+            //    biases[i] = 2.0f * u64_to_float(rng()) - 1.0f;
+
+
+
+
+
+
+
+            // 1. Calculate hidden width to determine weight scaling
+                  const int hiddenSizex = (columns-(InputSize+OutputSize)) / (nLayers-1);
+
+                  // 2. He/Xavier Initialization: scale weights down so massive summations
+                  // don't blow out the Tanh Output derivative into 0.0!
+                  const FLOAT weight_scale = std::sqrt(2.0f / (FLOAT)(columns));
+
+                  for (int i = 0; i < columns * columns; ++i)
+                      weights[i] = (2.0f * u64_to_float(rng()) - 1.0f) * weight_scale;
+
+                  // 3. Initialize biases slightly positive to ensure ReLUs aren't born "dead"
+                  for (int i = 0; i < columns * Max_layers; ++i)
+                      biases[i] = 0.01f;
+
+
+
+
+
+
+
+
+
 
             // Initialize DAG:
             int from = InputSize*columns;
@@ -1085,11 +1115,13 @@ inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t 
                 for (int i=0; i<hiddenSize; ++i)
                 {
                     for (int j=0; j<hiddenSize; ++j)
-                        topologies[1].set(from + j, true);
+                        topologies[layer].set(from + j, true);
                     from += columns;
                 }
                 from += hiddenSize;
             }
+            const int current_src = from % columns; // Preserve previous layer's src offset
+            from = (columns - OutputSize) * columns + current_src; // Hard-align the dst
             for (int i=0; i<OutputSize; ++i)
             {
                 for (int j=0; j<hiddenSize; ++j)
@@ -1102,7 +1134,7 @@ inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t 
             {
                 for (int i=0; i<columns*columns; ++i)
                 {
-                    if (rng() % 100 < 15) // 15% chance to flip
+                    if (rng() % 100 < 25) // 25% chance to flip
                     {
                         const bool current = topologies[layer][i];
                         topologies[layer].set(i, !current);
@@ -1119,6 +1151,13 @@ inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t 
             // todo: tahn or softmax?
             forward<tanh>(nLayers-1, &activations[(nLayers-2)*columns], columns);
             return &activations[(nLayers-1)*columns];
+        }
+
+        FLOAT evaluateBatch()
+        {
+            // Not implemented yet, but the idea is to process multiple inputs in parallel using SIMD.
+            // This would require reorganizing the data layout to be more cache-friendly and SIMD-friendly.
+            return 0.0f;
         }
 
         FLOAT train(const FLOAT *inputs, const FLOAT *targets, FLOAT learning_rate)
@@ -1179,21 +1218,21 @@ inline float tanh_derivative(float x) { float t = std::tanh(x); return 1.0f - t 
 /****************************************/
 /*           feed forward 16 (IEEE 754) */
 /****************************************/
-template <int InputSize, int OutputSize, int Max_layers, typename Rng>
-using FeedForward16 = FeedForward32<InputSize, OutputSize, Max_layers, Rng>;
+template <int InputSize, int OutputSize, int Max_layers, int HiddenWidth, typename Rng>
+using FeedForward16 = FeedForward32<InputSize, OutputSize, Max_layers, HiddenWidth, Rng>;
 // FLOAT masterCopy
 
 
 /****************************************/
-/*                     "Neural" Network */
+/*              "Neural Network" 🙄🙄🙄 */
 /****************************************/
 #if defined(__AVX512FP16__) || defined(__ARM_NEON) || defined(__wasm_simd128__)
-  template <int InputSize, int OutputSize, int Max_layers, typename Rng>
-  using Neural = FeedForward16<InputSize, OutputSize, Max_layers, Rng>;
+  template <int InputSize, int OutputSize, int Max_layers, int HiddenWidth, typename Rng>
+  using Neural = FeedForward16<InputSize, OutputSize, Max_layers, HiddenWidth, Rng>;
 #else
   // Of course not... 🙄
-  template <int InputSize, int OutputSize, int Max_layers, typename Rng>
-  using Neural = FeedForward32<InputSize, OutputSize, Max_layers, Rng>;
+  template <int InputSize, int OutputSize, int Max_layers, int HiddenWidth, typename Rng>
+  using Neural = FeedForward32<InputSize, OutputSize, Max_layers, HiddenWidth, Rng>;
 #endif
 
 
@@ -1237,15 +1276,15 @@ using FeedForward16 = FeedForward32<InputSize, OutputSize, Max_layers, Rng>;
                       {
                           return weights[i];
                       };
-                      auto correct0 = Neural<2,2,3,decltype(rng)>::BitArray<columns*columns>{
+                      auto correct0 = Neural<2,2,3,16,decltype(rng)>::BitArray<columns*columns>{
                                           0b0000000000000000000011000000001100000000110000000000000000000000,
                                           0b0000000000000000000000000000000000000000000000000000000000000000
                                       };
-                      auto correct1 = Neural<2,2,3,decltype(rng)>::BitArray<columns*columns>{
+                      auto correct1 = Neural<2,2,3,16,decltype(rng)>::BitArray<columns*columns>{
                                           0b0000000000000000000000000000000000000000000000000000111000000011,
                                           0b1000000011100000000000000000000000000000000000000000000000000000
                                       };
-                      auto correct2 = Neural<2,2,3,decltype(rng)>::BitArray<columns*columns>{
+                      auto correct2 = Neural<2,2,3,16,decltype(rng)>::BitArray<columns*columns>{
                                           0b0000000000000000000000000000000000000000000000000000000000000000,
                                           0b0000000000000000000001110000000111000000000000000000000000000000
                                       };
@@ -1368,7 +1407,7 @@ using FeedForward16 = FeedForward32<InputSize, OutputSize, Max_layers, Rng>;
 /* tree expansion (HEADACHE ATTACK!!!)  */
 /****************************************/
     template <GameMove Move>
-    struct Node
+    struct Node // todo: convert this from an 'array of structs' into a 'struct of arrays'
     {
         static constexpr SWORD never_expanded = -1;
         static constexpr SWORD removed = -2; // Debug
@@ -1380,6 +1419,7 @@ using FeedForward16 = FeedForward32<InputSize, OutputSize, Max_layers, Rng>;
         Move     moveHere;
         SWORD    visits = 1; // Must be '1' to stop 'nan' // todo if changed also chage in ucbselect()!
         FLOAT    UCBscore;         // Placeholder used during UCB calc.
+        FLOAT    nnScore;
         #ifdef INCLUDEAI__ADD_SCORE_FOR_TERMINAL_NODES
         // todo: this could be removed. is it redundant if we have cutoff depth?
           FLOAT    terminalScore = 0.f; // Keeping another separate score for terminal nodes may not make sense,
@@ -1427,7 +1467,7 @@ int shallowestTerminalDepth = 9999;
         }
     };
 
-    static_assert(sizeof(Node<SQWORD>) <= 64);
+    //static_assert(sizeof(Node<SQWORD>) <= 64); todo: del this line after a-o-s -> s-o-a conversion
 
 
 /****************************************/
@@ -1450,10 +1490,9 @@ int shallowestTerminalDepth = 9999;
 /*    Search tree node helper functions */
 /****************************************/
     template <int NumNodes, GameMove MoveType, BitfieldIntType BitfieldType>
-    inline Node<MoveType> *disconnectBranch(Ai_ctx<NumNodes, MoveType, BitfieldType>& ai_ctx,
-                                            Node<MoveType> *parent,
-                                            const Node<MoveType> *removeMe
-                                           )
+    inline void disconnectBranch(Ai_ctx<NumNodes, MoveType, BitfieldType>& ai_ctx,
+                                 Node<MoveType> *parent,
+                                 const Node<MoveType> *removeMe)
     {
         aiAssert(parent);
         aiAssert(parent->activeBranches > 0);
@@ -1477,7 +1516,7 @@ int shallowestTerminalDepth = 9999;
         const bool branchIsChildOfRoot = parent->parent == nullptr; // Keep full set of moves for root
         if (removeMe->createdBranches && !branchIsChildOfRoot)
         {
-            std::printf("rem: %d \n", removeMe->createdBranches);
+            //std::printf("rem: %d \n", removeMe->createdBranches);
             ai_ctx.bitalloc.free(removeMe->branches - ai_ctx.nodePool, removeMe->createdBranches);
         }
 
@@ -1495,10 +1534,7 @@ int shallowestTerminalDepth = 9999;
 
         // Don't swap w/ itself if the to-be-removed node is last:
         if (&swapDst == &parent->branches[parent->activeBranches-1])
-        {
             parent->activeBranches -= 1;
-            return &swapSrc;
-        }
 
         swapDst.activeBranches  = swapSrc.activeBranches;
         swapDst.createdBranches = swapSrc.createdBranches;
@@ -1514,28 +1550,11 @@ int shallowestTerminalDepth = 9999;
 
         // Establish new "parent" for each branch node after swap
         // (the "parent" was prev. &swapSrc):
-        //for (int i=0; i<swapDst.createdBranches; ++i)
         for (int i=0; i<swapDst.activeBranches; ++i)
             swapDst.branches[i].parent = &swapDst;
 
-        #ifdef INCLUDEAI__PREVENT_PARENT_NODES_FROM_GETTING_UPDATED_CORRECTLY
-        #else
-          swapSrc.activeBranches = Node<MoveType>::removed;
-          swapSrc.moveHere       = removedMoveHere;
-          swapSrc.visits         = removedVisits;
-          swapSrc.score          = removedScore;
-          swapSrc.branches       = nullptr;
-          swapSrc.branchScore = removedBranchScore;
-          swapSrc.shallowestTerminalDepth = removedShallowestTerminalDepth; // Important!
-        #endif
-
-          //for (int i=0; i<swapSrc.createdBranches; ++i)
-            //swapSrc.branches[i].parent = &swapSrc;
-
-
         parent->activeBranches -= 1;
-        aiAssert(swapSrc.parent == parent);
-        return &swapSrc;
+        aiAssert(swapDst.parent == parent);
     }
 
 
@@ -1755,6 +1774,7 @@ int shallowestTerminalDepth = 9999;
               typename NN,
               typename Rndfunc
              >
+             // todo: 'rand' is only used in the simulator, so maybe it should be moved there instead of being passed all the way down here?
     constexpr MCTS_result<MoveType> mcts(const Board& boardOriginal, AiCtx& ai_ctx, NN& nn, Rndfunc rand) noexcept
     {
         [[maybe_unused]] auto UCBselectBranch =
@@ -1990,15 +2010,20 @@ int shallowestTerminalDepth = 9999;
                 outcome = boardClone.doMove( selectedNode->moveHere );
                 boardClone.switchPlayer();
                 depth += 1;
-                //if (selectedNode->moveHere == 59)
-                //{
-                //    std::printf("root move: %d \n", selectedNode->moveHere);
-                //}
             }
             // 3b. Pick (select) a node for analysis:
             else if (selectedNode->activeBranches > 0)
             {
                 aiAssert(selectedNode->branches);
+                FLOAT batchNNInputs[64*Board::MaxNetworkInputs] = {0};
+                for (int i=0; i<aiMin(selectedNode->activeBranches, 64); ++i)
+                {
+                    Board boardForNN = boardClone.clone();
+                    boardForNN.doMove( selectedNode->branches[i].moveHere );
+                    boardForNN.switchPlayer();
+                    for (int j=0; j<Board::MaxNetworkInputs; ++j)
+                        batchNNInputs[i*Board::MaxNetworkInputs + j] = boardForNN.getNetworkInputs()[j];
+                }
                 // Should be rand to ensure fair distribution:
                 const auto sample = rand() % selectedNode->activeBranches;
                 // ^^^ What that means is that if we bias towards a specific kind of node: good,
@@ -2012,7 +2037,7 @@ int shallowestTerminalDepth = 9999;
 
 
             //  bool stop = false;
-            float score = 0.f; // -1: loss, 1: win, 0: draw // 0 means loss, 1 means draw, 2 means win!!!
+            float score = 0.f;
             /* if (parent->activeBranches <= 0) {
             std::printf("\033[1;35m act:%d created:%d , fin?: %d \033[0m \n", parent->activeBranches, parent->createdBranches,  outcome!=Board::Outcome::running);
             // break;
@@ -2077,9 +2102,9 @@ int shallowestTerminalDepth = 9999;
                             threshold = aiMin(confidence, threshold);
                             mcts_result.statistics[MCTS_result<MoveType>::thresholdLevel] = threshold;
                         }
-                        #ifdef INCLUDEAI__INSTANT_LOBOTOMY
-                          selectedNode->shallowestTerminalDepth = depth + MinimaxDepth; // todo: we dont know what level the termination happend!
-                          disconnect = true;
+                        #ifndef INCLUDEAI__INSTANT_LOBOTOMY
+                          //selectedNode->shallowestTerminalDepth = depth + MinimaxDepth; // todo: we dont know what level the termination happend!
+                          //disconnect = true;
                         #endif
                         mcts_result.statistics[MCTS_result<MoveType>::minimaxes] += 1;
                     }
@@ -2110,57 +2135,15 @@ int shallowestTerminalDepth = 9999;
                 disconnect = true;
             }
 
-
-            if (disconnect)
-            {
-                mcts_result.statistics[MCTS_result<MoveType>::terminalReached] += 1;
-
-                Node<MoveType> *child = selectedNode;
-                Node<MoveType> *parent = selectedNode->parent;
-                aiAssert(parent);
-                aiAssert(selectedNode != root);                  // Ensure 'selectedNode' not root
-                //aiAssert([&]{ return outcome==Board::Outcome::running ? parent->branches!=nullptr : true; }());
-                //aiAssert([&]{ return outcome==Board::Outcome::running ? parent->activeBranches>0 : true; }());
-                aiAssert([&]{ return parent->branches!=nullptr; }());
-                // terminal nodes have no branches:
-                aiAssert(parent->activeBranches!=0); //>0 || parent->activeBranches==Node::never_expanded);
-
-                while (parent)
-                {
-                    //std::printf("/// active:%d *brnch-start:%p root:%p parent:%p dep:%d sel:%p scr:%2.2f\n", parent->activeBranches, parent->branches-ai_ctx.nodePool, root-ai_ctx.nodePool, parent-ai_ctx.nodePool, 0, selectedNode-ai_ctx.nodePool, score);
-
-                    //std::printf("still active 'siblings': ");
-                    for (int i=0; false&&i<parent->activeBranches; ++i)
-                    {
-                   //     std::printf("\033[0;33m%p scr:%2.2f  \033[0m", (&parent->branches[i])-ai_ctx.nodePool, parent->branches[i].score);
-                    }
-                  //  std::printf("%d \n", parent->activeBranches);
-
-
-                    Node<MoveType> *todo = selectedNode->parent;
-                    selectedNode = disconnectBranch(ai_ctx, parent, child);
-                    aiAssert(selectedNode->parent == parent);
-                    //aiAssert(todo == selectedNode->parent); // 100% fail!!!
-                    //selectedNode->parent = todo; // fix this goes in  disconnectBranch()
+            Node<MoveType> *leafNodeForPruning = selectedNode;
 
 
 
 
-                    if (parent->activeBranches != 0)
-                    {
-                        break; // Stop
-                    }
-                    else
-                    {
-                        child = parent;
-                        aiAssert(parent != parent->parent);
-                        parent = parent->parent; // Lolz
-                    }
-                }
-            }
+
 
             // Floyd's Cycle. Ensure the graph remains acyclic (debug only!):
-            #if defined(AI_DEBUG)
+            #if defined(INCLUDEAI__CHECK_FOR_CYCLES)
               aiAssert([selectedNode]
                        {
                            Node<MoveType> *fast = selectedNode;
@@ -2200,7 +2183,7 @@ int shallowestTerminalDepth = 9999;
                 // than the most immediate node where a turn ends:
                 //if ([&]{ if constexpr ((cutoff_scoring&hyperparams)==cutoff_scoring) return branchDepth<cutoff; else return true; }())
                //////////
-                if (depth <= cutoffDepth) // <- This line dramatically improves the "ai"
+                if (depth <= cutoffDepth) [[likely]] // <- This line dramatically improves the "ai"
                 {
                     // 'visits' does not tell us if a position is a winner or not. It tells us
                     // how -interesting- a position is:
@@ -2224,6 +2207,52 @@ int shallowestTerminalDepth = 9999;
 
 
             }
+
+
+
+
+
+
+            // 6. Cleanup:
+            if (disconnect)
+            {
+                mcts_result.statistics[MCTS_result<MoveType>::terminalReached] += 1;
+
+                Node<MoveType> *child = leafNodeForPruning;
+                Node<MoveType> *parent = leafNodeForPruning->parent;
+                aiAssert(parent);
+                aiAssert(leafNodeForPruning != root);                  // Ensure 'selectedNode' not root
+                //aiAssert([&]{ return outcome==Board::Outcome::running ? parent->branches!=nullptr : true; }());
+                //aiAssert([&]{ return outcome==Board::Outcome::running ? parent->activeBranches>0 : true; }());
+                aiAssert(parent->branches!=nullptr);
+                // terminal nodes have no branches:
+                aiAssert(parent->activeBranches!=0); //>0 || parent->activeBranches==Node::never_expanded);
+
+                while (parent)
+                {
+                    //std::printf("/// active:%d *brnch-start:%p root:%p parent:%p dep:%d sel:%p scr:%2.2f\n", parent->activeBranches, parent->branches-ai_ctx.nodePool, root-ai_ctx.nodePool, parent-ai_ctx.nodePool, 0, selectedNode-ai_ctx.nodePool, score);
+
+                    //std::printf("still active 'siblings': ");
+                    for (int i=0; false&&i<parent->activeBranches; ++i)
+                    {
+                   //     std::printf("\033[0;33m%p scr:%2.2f  \033[0m", (&parent->branches[i])-ai_ctx.nodePool, parent->branches[i].score);
+                    }
+                  //  std::printf("%d \n", parent->activeBranches);
+
+
+                    disconnectBranch(ai_ctx, parent, child);
+                    if (parent->activeBranches != 0)
+                    {
+                        break; // Stop
+                    }
+                    else
+                    {
+                        child = parent;
+                        aiAssert(parent != parent->parent);
+                        parent = parent->parent; // Lolz
+                    }
+                }
+            }
         } // iterations
 
 
@@ -2243,7 +2272,7 @@ int shallowestTerminalDepth = 9999;
             for (int i=0; i < root->createdBranches; ++i)
             {
                 Node<MoveType>& branch = root->branches[i];
-                if (branch.shallowestTerminalDepth == branch.score > 0.f)
+                if (branch.shallowestTerminalDepth == shallowestTerminal && branch.score > 0.f)
                 {
                     hasShallowWin = true;
                     break;
@@ -2395,6 +2424,7 @@ int shallowestTerminalDepth = 9999;
         TicTacTest(const TicTacTest&) = delete;
         TicTacTest& operator=(const TicTacTest&) = delete;
         TicTacTest(TicTacTest&&) = default;
+        TicTacTest& operator=(TicTacTest&&) = default;
 
         constexpr TicTacTest clone() const
         {
@@ -2589,7 +2619,7 @@ int shallowestTerminalDepth = 9999;
 
 /*
     NOTE: This file is auto-generated by generate.py from isprime.S.
-    Do not edit this file directly.
+    Do not edit directly.
 */
 
 // Only enable for GCC/Clang on x86-64 where this syntax is valid.
