@@ -49,15 +49,13 @@ public:
     YavalathBoard(const YavalathBoard&) = delete;
     YavalathBoard& operator=(const YavalathBoard&) = delete;
     YavalathBoard(YavalathBoard&&) = default;
-    YavalathBoard& operator=(YavalathBoard&&) = default;
+    YavalathBoard& operator=(YavalathBoard&&) = delete;
 
     constexpr YavalathBoard clone() const
     {
         YavalathBoard dst;
         for (int i=15; i<(11*11); ++i)
-        {
             dst.board[i] = board[i];
-        }
         dst.currentPlayer = currentPlayer;
         dst.openpos = openpos;
         return dst;
@@ -166,7 +164,7 @@ public:
 
     float *getNetworkInputs() { return nullptr; }
 
-     constexpr void randomize() {}
+    constexpr void randomize() {}
 
     constexpr void reset()
     {
@@ -192,8 +190,10 @@ struct YavalathPlayer : YavalathPlayerBase
     YavalathBoard::Move selectMove([[maybe_unused]] const YavalathBoard& original, [[maybe_unused]] const int input) override
     {
         for (int i=15; i<(11*11); ++i)
+        {
             if (original.board[i] == input)
                 return YavalathBoard::Move{i};
+        }
     }
 };
 

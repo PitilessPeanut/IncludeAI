@@ -33,7 +33,7 @@ public:
     TicTacBoard(const TicTacBoard&) = delete;
     TicTacBoard& operator=(const TicTacBoard&) = delete;
     TicTacBoard(TicTacBoard&&) = default;
-    TicTacBoard& operator=(TicTacBoard&&) = default;
+    TicTacBoard& operator=(TicTacBoard&&) = delete;
 
     constexpr TicTacBoard clone() const
     {

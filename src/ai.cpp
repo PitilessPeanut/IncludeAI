@@ -19,7 +19,7 @@
         TicTacTest(const TicTacTest&) = delete;
         TicTacTest& operator=(const TicTacTest&) = delete;
         TicTacTest(TicTacTest&&) = default;
-        TicTacTest& operator=(TicTacTest&&) = default;
+        TicTacTest& operator=(TicTacTest&&) = delete;
 
         constexpr TicTacTest clone() const
         {

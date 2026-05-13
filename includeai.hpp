@@ -1420,12 +1420,8 @@ using FeedForward16 = FeedForward32<InputSize, OutputSize, Max_layers, HiddenWid
         SWORD    visits = 1; // Must be '1' to stop 'nan' // todo if changed also chage in ucbselect()!
         FLOAT    UCBscore;         // Placeholder used during UCB calc.
         FLOAT    nnScore;
-        #ifdef INCLUDEAI__ADD_SCORE_FOR_TERMINAL_NODES
-        // todo: this could be removed. is it redundant if we have cutoff depth?
-          FLOAT    terminalScore = 0.f; // Keeping another separate score for terminal nodes may not make sense,
-                                        // since a terminal condition may pop up at any level of the tree,
-                                        // which means that by the time we are back at the root, a wrong node
-                                        // could end up having a higher score than the correct one...
+        #ifdef INCLUDEAI__SEPARATE_SCORE_FOR_TERMINAL_NODES
+          FLOAT    terminalScore = 0.f; // Irrelevant. "cutoff" ensures that branches are pruned beyond terminal depth
         #endif
 SWORD branchScore = 0;
 int shallowestTerminalDepth = 9999;
@@ -2074,6 +2070,7 @@ int shallowestTerminalDepth = 9999;
                 #endif
 
                 const FLOAT *pValues = nn.evaluate(boardClone.getNetworkInputs(), boardClone.getBoardScore());
+                //const FLOAT *pValues = selectedNode->nnEvaluationResult;
                 const FLOAT confidence = pValues[0];
                 aiAssert(confidence<1.1f && confidence>-1.1f);
                 if (aiAbs(confidence) < threshold)
@@ -2187,7 +2184,7 @@ int shallowestTerminalDepth = 9999;
                 {
                     // 'visits' does not tell us if a position is a winner or not. It tells us
                     // how -interesting- a position is:
-                    selectedNode->visits += 1;
+                    selectedNode->visits += 1; // todo: if being forced to defend, ai won't "see" strong plays beyod the cutoff!!!!
                     selectedNode->score += score;
 
                     //depth += 1;
@@ -2424,7 +2421,7 @@ int shallowestTerminalDepth = 9999;
         TicTacTest(const TicTacTest&) = delete;
         TicTacTest& operator=(const TicTacTest&) = delete;
         TicTacTest(TicTacTest&&) = default;
-        TicTacTest& operator=(TicTacTest&&) = default;
+        TicTacTest& operator=(TicTacTest&&) = delete;
 
         constexpr TicTacTest clone() const
         {
