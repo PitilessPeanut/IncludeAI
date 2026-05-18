@@ -1,6 +1,116 @@
 #ifndef PATH_HPP
 #define PATH_HPP
 
+#include <concepts>
+
+/****************************************/
+/*                           PathEngine */
+/* Cache efficient, ultra-fast          */
+/* "Dijkstra" for small graphs.         */
+/****************************************/
+    template <int MaxDistance, class Board, std::signed_integral IntType = int>
+    class PathEngine
+    {
+    private:
+        static constexpr int INF_COST = 99;
+        static_assert(MaxDistance < INF_COST);
+        static constexpr int DIAMOND_SIZE = 2 * (MaxDistance+1) * ((MaxDistance+1) + 1) + 1;
+        static constexpr int QUEUE_SIZE = DIAMOND_SIZE < Board::MAX_AREA ? DIAMOND_SIZE : Board::MAX_AREA;
+        IntType cached_neighbors[Board::MAX_AREA][4];
+        IntType costs[Board::MAX_AREA];
+        IntType predecessor[Board::MAX_AREA]; // for path reconstruction
+        int generation[Board::MAX_AREA] = {0};
+        int current_generation = 0;
+    public:
+        PathEngine() = default;
+        PathEngine(const PathEngine&) = delete;
+        PathEngine& operator=(const PathEngine&) = delete;
+
+        void precompute(const Board& board)
+        {
+            for (int pos=0; pos<Board::MAX_AREA; ++pos)
+            {
+                const int x = pos % board.mapWidth;
+                const int y = pos / board.mapWidth;
+                cached_neighbors[pos][0] = (y>0)                 ? (pos-board.mapWidth) : -1; // North
+                cached_neighbors[pos][1] = (y<board.mapHeight-1) ? (pos+board.mapWidth) : -1; // South
+                cached_neighbors[pos][2] = (x>0)                 ? (pos-1) : -1; // West
+                cached_neighbors[pos][3] = (x<board.mapWidth-1)  ? (pos+1) : -1; // East
+            }
+        }
+
+        IntType dijkstra(IntType start, IntType target, const Board& board)
+        {
+            current_generation++; // Increment generation to avoid clearing 'costs' and 'generation' arrays.
+
+            IntType queue[QUEUE_SIZE];
+            IntType head = 0, tail = 0;
+            queue[tail++] = start;
+            generation[start] = current_generation;
+            costs[start] = 0;
+            predecessor[start] = -1;
+            while (head != tail)
+            {
+                IntType lowest_idx = head;
+                for (IntType i=head+1; i<tail; ++i)
+                {
+                    if (costs[queue[i]] < costs[queue[lowest_idx]])
+                        lowest_idx = i;
+                }
+                // Swap lowest to front and pop:
+                const IntType current = queue[lowest_idx];
+                queue[lowest_idx] = queue[head];
+                ++head;
+
+                if (current == target)
+                    return costs[current];  // Dijkstras first pop of target is optimal
+
+                if (costs[current] > MaxDistance)
+                    continue; // Prune...
+
+                for (int i=0; i<4; ++i)
+                {
+                    const IntType neighbor = cached_neighbors[current][i];
+                    if (neighbor == -1) continue; // Out of bounds.
+
+                    const IntType next_cost = costs[current] + board.getCost(neighbor);
+                    const bool unvisited = (generation[neighbor] != current_generation);
+                    if (unvisited || next_cost < costs[neighbor])
+                    {
+                        costs[neighbor] = next_cost;
+                        predecessor[neighbor] = current;
+                        if (unvisited)
+                        {
+                            generation[neighbor] = current_generation;
+                            queue[tail++] = neighbor;
+                        }
+                    }
+                }
+            }
+            return INF_COST;
+        }
+
+        int reconstruct(IntType start, IntType target, IntType *out_path) const
+        {
+            int length = 0;
+            IntType cur = target;
+            while (cur != start)
+            {
+                out_path[length++] = cur;
+                cur = predecessor[cur];
+            }
+            out_path[length++] = start;
+            // Reverse path:
+            for (int i=0, j = length-1; i<j; ++i, --j)
+            {
+                const IntType tmp = out_path[i];
+                out_path[i] = out_path[j];
+                out_path[j] = tmp;
+            }
+            return length;
+        }
+    };
+
 
 /****************************************/
 /*                       Floyd-Warshall */
@@ -76,68 +186,6 @@
     }
 
 
-/****************************************/
-/*          Cache for Paths on a 2d map */
-/****************************************/
-    template <int Width, int Height, int MaxLength, typename IntType>
-    class PathContainer2D
-    {
-    private:
-        static constexpr IntType Inf = ~static_cast<IntType>(0);
-        static constexpr IntType Area = Width*Height;
-        IntType costsTable[Area*Area] = {0};
-        IntType pathsTable[Area*Area];
-    public:
-        explicit PathContainer2D(const IntType *map)
-        {
-            rebuild(map);
-        }
-
-        void rebuild(const IntType *map)
-        {
-            IntType stepsTable[Area*Area];
-
-            // clip edges and prepare costs:
-            int pos = 0;
-            for (int i=0; i<Area; ++i)
-            for (int j=0; j<Area; ++j)
-            {
-                const bool north = j == (i - Width);
-                const bool east  = j == (i +     1) && ((i + 1) % Width != 0);
-                const bool south = j == (i + Width);
-                const bool west  = j == (i -     1) && ((i % Width) != 0);
-                const bool self  = j == i;
-                if ((north || east || south || west) && !self)
-                {
-                    costsTable[pos] = map[j];
-                    stepsTable[pos] = 1; // It's one step to an adjacent tile.
-                }
-                else
-                {
-                    costsTable[pos] = Inf;
-                    stepsTable[pos] = Inf;
-                }
-                pathsTable[pos] = Inf; // reset paths
-                pos += 1;
-            }
-
-            FloydWarshall<Area, MaxLength>(costsTable, pathsTable, stepsTable, Inf);
-
-            // Inf cost if steps > MaxLength:
-            for (int i=0; i<(Area*Area); ++i)
-            {
-                if (stepsTable[i] > MaxLength)
-                    costsTable[i] = Inf;
-            }
-        }
-
-        int getCost(const int start_x, const int start_y, const int end_x, const int end_y, const IntType *currentMap)
-        {
-            const int tableIdxStart = (start_y*Width) + start_x;
-            const int tableIdxEnd   = (end_y  *Width) + end_x;
-            return costsTable[(tableIdxStart*Area) + tableIdxEnd];
-        }
-    };
 
 
 #else

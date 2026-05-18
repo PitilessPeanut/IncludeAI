@@ -113,7 +113,7 @@ namespace include_ai {
         Node    *branches = nullptr;  // Must be initialized to NULL
         FLOAT    score = 0.f; //0.01f;    // Start with some positive value to prevent divide by zero error
         Move     moveHere;
-        SWORD    visits = 1; // Must be '1' to stop 'nan' // todo if changed also chage in ucbselect()!
+        SWORD    visits = 1; // Must be '1' to stop 'x/0' // todo if changed also chage in ucbselect()!
         FLOAT    UCBscore;         // Placeholder used during UCB calc.
         FLOAT    nnScore;
         #ifdef INCLUDEAI__SEPARATE_SCORE_FOR_TERMINAL_NODES
@@ -543,6 +543,12 @@ int shallowestTerminalDepth = 9999;
             [](const Node<MoveType>& node) -> Node<MoveType> *
             {
                 return nullptr; // todo!!
+            };
+
+        [[maybe_unused]] auto PUCT =
+            [](const Node<MoveType>& node) -> Node<MoveType> *
+            {
+                return nullptr;
             };
 
 

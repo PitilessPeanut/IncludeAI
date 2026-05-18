@@ -6,6 +6,13 @@
 /****************************************/
     static_assert([]
                   {
+                      //PathEngine<> pathEngineTest;
+                      return true;
+                  }()
+                 );
+
+    static_assert([]
+                  {
                       int dist[36] = {
                           99,10,99,20,99, 1,
                           99,99, 5,99,99,99,
@@ -127,3 +134,7 @@
     //                  return true;
     //              }()
     //             );
+
+
+
+    // qjao.github.io/PathFinding.js/visual/
