@@ -8,16 +8,15 @@
 /* Cache efficient, ultra-fast          */
 /* "Dijkstra" for small graphs.         */
 /****************************************/
-    template <int MaxDistance, class Board, std::signed_integral IntType = int>
+    template <int MaxDistance, class Board, std::signed_integral IntType = int, IntType InfCost = 99>
     class PathEngine
     {
     private:
-        static constexpr int INF_COST = 99;
-        static_assert(MaxDistance < INF_COST);
+        static_assert(MaxDistance < InfCost);
         static constexpr int DIAMOND_SIZE = 2 * (MaxDistance+1) * ((MaxDistance+1) + 1) + 1;
         static constexpr int QUEUE_SIZE = DIAMOND_SIZE < Board::MAX_AREA ? DIAMOND_SIZE : Board::MAX_AREA;
-        IntType cached_neighbors[Board::MAX_AREA][4];
-        IntType costs[Board::MAX_AREA];
+        IntType cached_neighbors[Board::MAX_AREA][4] = {}; // 'constexpr' requires initialization
+        IntType costs[Board::MAX_AREA] = {};
         IntType predecessor[Board::MAX_AREA]; // for path reconstruction
         int generation[Board::MAX_AREA] = {0};
         int current_generation = 0;
@@ -26,7 +25,7 @@
         PathEngine(const PathEngine&) = delete;
         PathEngine& operator=(const PathEngine&) = delete;
 
-        void precompute(const Board& board)
+        constexpr void precompute(const Board& board)
         {
             for (int pos=0; pos<Board::MAX_AREA; ++pos)
             {
@@ -39,7 +38,7 @@
             }
         }
 
-        IntType dijkstra(IntType start, IntType target, const Board& board)
+        constexpr IntType dijkstra(IntType start, IntType target, const Board& board)
         {
             current_generation++; // Increment generation to avoid clearing 'costs' and 'generation' arrays.
 
@@ -73,7 +72,7 @@
                     const IntType neighbor = cached_neighbors[current][i];
                     if (neighbor == -1) continue; // Out of bounds.
 
-                    const IntType next_cost = costs[current] + board.getCost(neighbor);
+                    const IntType next_cost = costs[current] + board.getCost(neighbor, current);
                     const bool unvisited = (generation[neighbor] != current_generation);
                     if (unvisited || next_cost < costs[neighbor])
                     {
@@ -87,10 +86,10 @@
                     }
                 }
             }
-            return INF_COST;
+            return InfCost;
         }
 
-        int reconstruct(IntType start, IntType target, IntType *out_path) const
+        constexpr int reconstruct(IntType start, IntType target, IntType *out_path) const
         {
             int length = 0;
             IntType cur = target;

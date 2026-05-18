@@ -4,10 +4,42 @@
 /****************************************/
 /*                                Tests */
 /****************************************/
+    struct TestBoard
+    {
+        int mapWidth = 6, mapHeight = 6;
+        static constexpr int MAX_AREA = 36;
+        unsigned char board[MAX_AREA] = {
+            9,9,9,1,9,9,
+            9,9,9,1,1,9,
+            9,9,9,9,1,9,
+            9,9,9,9,9,9,
+            9,9,9,9,9,9,
+            9,9,9,9,9,9
+        };
+        constexpr int getCost(int next, int current) const
+        {
+            return board[next];
+        }
+    };
+
     static_assert([]
                   {
-                      //PathEngine<> pathEngineTest;
-                      return true;
+                      TestBoard testBoard;
+                      PathEngine<36, TestBoard, short, 99> pathEngineTest;
+                      pathEngineTest.precompute(testBoard);
+                      short dist = pathEngineTest.dijkstra(3, 16, testBoard);
+                      bool ok = dist == 3;
+                      short path[10] = {0};
+                      const int length = pathEngineTest.reconstruct(3, 16, path);
+                      ok = ok && length == 4;
+                      ok = ok && path[0] == 3;
+                      ok = ok && path[1] == 9;
+                      ok = ok && path[2] == 10;
+                      ok = ok && path[3] == 16;
+                      testBoard.board[9] = 2;
+                      dist = pathEngineTest.dijkstra(3, 16, testBoard);
+                      ok = ok && dist == 4; // more expensive path now
+                      return ok;
                   }()
                  );
 
