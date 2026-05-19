@@ -1,6 +1,6 @@
 # IncludeAI
 
-**IncludeAI** is a custom, hand-written implementation of a **Zero-Knowledge Reinforcement Learning** algorithm that, unlike AlphaZero, does not suffer from the [shallow trap](https://nullprogram.com/blog/2017/04/27) problem and should (given enough resources) be able to play games with *complete information*[^1] perfectly.
+**IncludeAI** is a custom, hand-written implementation of a **Zero-Knowledge Reinforcement Learning** algorithm that, unlike AlphaZero, does not suffer from the [shallow trap](https://nullprogram.com/blog/2017/04/27) problem and is able to play tactical games, even with extremly high branching factor such as Yavalath, Connect Six, Othello and so on, perfectly. Beyond that it should also be able to play games with hidden information, such as Poker, Starcraft, etc. as well as randomness, such as Backgammon, etc. competently.
 
 ## TAKE YOUR GAME-AI TO THE NEXT LEVEL!!!
 
@@ -9,6 +9,7 @@ Plug-in this Ai and watch magic happen! Under the condition that your game is st
 
 
 ### Version
+alpha     0.00.1 Not sure what makes the transition, but here we are! Ready to accept bug reports! Happy tinkering!
 pre-alpha 0.00.0 This version is *not* yet ready for prime time! Please contact me first before trying to test!
 
 ### Building
@@ -109,6 +110,5 @@ Three things you should note if you decide to use this:
 3) I have basically no idea what I'm doing...
 
 
-[^1]: Like Chess, not Poker: No secrets, dice or cards
 [^2] See "phase 3": https://jeffbradberry.com/posts/2015/09/intro-to-monte-carlo-tree-search/
 [^3]: Solving the Trap State problem in mcts is analogous to solving the Double-Spend problem in peer-to-peer payment networks: Seems impossible until someone finds a solution. But who??

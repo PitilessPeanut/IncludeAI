@@ -38,6 +38,20 @@
             }
         }
 
+        constexpr void floodFill(IntType start, const Board& board)
+        {
+            // Asking for path to -1 forces Dijkstra to explore everything
+            // until MaxDistance is reached or the queue is empty:
+            dijkstra(start, -1, board);
+        }
+
+        constexpr IntType getExploredCost(IntType node) const
+        {
+            // This is to stop having to reset 'costs' to InfCost every time before floodFill():
+            if (generation[node] != current_generation) return InfCost;
+            return costs[node];
+        }
+
         constexpr IntType dijkstra(IntType start, IntType target, const Board& board)
         {
             current_generation++; // Increment generation to avoid clearing 'costs' and 'generation' arrays.
