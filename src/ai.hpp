@@ -771,7 +771,7 @@ int shallowestTerminalDepth = 9999;
                   const SWORD polarity = boardClone.getWinner()!=boardOriginal.getCurrentPlayer() ? -1 : 1;
                 #endif
 
-                const FLOAT *pValues = nn.evaluate(boardClone.getNetworkInputs(), boardClone.getBoardScore());
+                const FLOAT *pValues = nn.evaluate(boardClone.getNetworkInputs());
                 //const FLOAT *pValues = selectedNode->nnEvaluationResult;
                 const FLOAT confidence = pValues[0];
                 aiAssert(confidence<1.1f && confidence>-1.1f);
