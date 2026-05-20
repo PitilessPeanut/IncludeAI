@@ -85,7 +85,7 @@ namespace include_ai {
             {obj.switchPlayer()};
             {cobj.getCurrentPlayer()} -> std::equality_comparable;
             {cobj.getWinner()} -> std::equality_comparable;
-            {cobj.getBoardScore()} -> std::convertible_to<FLOAT>;
+            // {cobj.getBoardScore()} -> std::convertible_to<FLOAT>; // todo remove???
             {obj.getNetworkInputs()} -> convertible_to_ptrFloat;
             {obj.randomize()};
             //{ T::MaxNetworkInputs } -> std::convertible_to<std::size_t>; // todo
