@@ -81,41 +81,21 @@
 
     static_assert([]
                   {
-                      UQWORD xoroshiro128plus_state[2] = {0x9E3779B97f4A7C15ull,0xBF58476D1CE4E5B9ull};
-
-                      //   Written in 2016-2018 by David Blackman and Sebastiano Vigna (vigna@acm.org)
-                      // To the extent possible under law, the author has dedicated all copyright
-                      // and related and neighboring rights to this software to the public domain
-                      // worldwide. This software is distributed without any warranty.
-                      // See <http://creativecommons.org/publicdomain/zero/1.0/>.
-                      auto xoroshiro128plus = [](UQWORD (&state)[2]) -> UQWORD
-                      {
-                          // The generators ending with + have weak low bits, so they
-                          // are recommended for floating point number generation
-                          const UQWORD s0 = state[0];
-                          UQWORD s1 = state[1];
-                          const UQWORD result = s0 + s1;
-
-                          s1 ^= s0;
-                          state[0] = ((s0 << 55) | (s0 >> (64 - 55))) ^ s1 ^ (s1 << 14); // a, b
-                          state[1] = (s1 << 36) | (s1 >> (64 - 36)); // c
-                          return result;
-                      };
-
                       using namespace include_ai;
+                      Xoroshiro128Plus rand(0x9E3779B97f4A7C15ull);
                       TicTacTest t1;
                       t1.pos[0]=2; t1.pos[1]=1; t1.pos[2]=2;
                       t1.pos[3]=1; t1.pos[4]=1; t1.pos[5]=2;
                       t1.pos[6]=0; t1.pos[7]=2; t1.pos[8]=1;
                       t1.currentPlayer = 1;
-                      float res = simulate<1>(t1, [&xoroshiro128plus_state, xoroshiro128plus]{ return xoroshiro128plus(xoroshiro128plus_state); });
+                      float res = simulate<1>(t1, rand);
                       bool ok = (res < .1f) && (res > -.1f); // draw
                       TicTacTest t2;
                       t2.pos[0]=1; t2.pos[1]=1; t2.pos[2]=0;
                       t2.pos[3]=2; t2.pos[4]=0; t2.pos[5]=0;
                       t2.pos[6]=0; t2.pos[7]=2; t2.pos[8]=0;
                       t2.currentPlayer = 1;
-                      res = simulate<1>(t2, [&xoroshiro128plus_state, xoroshiro128plus]{ return xoroshiro128plus(xoroshiro128plus_state); });
+                      res = simulate<1>(t2, rand);
                       return ok && (res>.5f); // Player 1 wins
                   }()
                  );

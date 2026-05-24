@@ -1349,6 +1349,51 @@ using FeedForward16 = FeedForward32<InputSize, OutputSize, Max_layers, HiddenWid
 
 
 /****************************************/
+/*       Xoroshiro128+ random generator */
+/****************************************/
+//   Written in 2016-2018 by David Blackman and Sebastiano Vigna (vigna@acm.org)
+// To the extent possible under law, the author has dedicated all copyright
+// and related and neighboring rights to this software to the public domain
+// worldwide. This software is distributed without any warranty.
+// See <http://creativecommons.org/publicdomain/zero/1.0/>.
+    struct Xoroshiro128Plus
+    {
+        UQWORD state[2];
+
+        constexpr explicit Xoroshiro128Plus(UQWORD seed)
+        {
+            UQWORD z = (seed + 0x9e3779b97f4a7c15ULL);
+            z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+            z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+            state[0] = z ^ (z >> 31);
+
+            z = (seed + 0x9e3779b97f4a7c15ULL * 2);
+            z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+            z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+            state[1] = z ^ (z >> 31);
+        }
+
+        constexpr UQWORD operator()()
+        {
+            const UQWORD s0 = state[0];
+            UQWORD s1 = state[1];
+            const UQWORD result = s0 + s1;
+
+            s1 ^= s0;
+            state[0] = ((s0 << 55) | (s0 >> (64 - 55))) ^ s1 ^ (s1 << 14);
+            state[1] = (s1 << 36) | (s1 >> (64 - 36));
+            return result;
+        }
+
+        constexpr UQWORD nextInt(UQWORD max)
+        {
+            return operator()() % max; // Helper to replace rng() % max
+        }
+    };
+
+
+
+/****************************************/
 /*   A 'move'/'action' by a user/player */
 /* within the game context              */
 /****************************************/
@@ -1566,8 +1611,8 @@ int shallowestTerminalDepth = 9999;
 /*                            Simulator */
 /* MaxRandSims should be '%3 != 0'      */
 /****************************************/
-    template <int MaxRandSims, Gameview Board, typename Rndfunc>
-    constexpr float simulate(const Board& original, Rndfunc rand)
+    template <int MaxRandSims, Gameview Board>
+    constexpr float simulate(const Board& original, Xoroshiro128Plus& rand)
     {
         int simWins = 0;
         // Run simulations:
@@ -1582,7 +1627,7 @@ int shallowestTerminalDepth = 9999;
                 const int nAvailMovesForThisTurn = boardSim.generateMovesAndGetCnt(storageForMoves);
                 if (nAvailMovesForThisTurn == 0)
                     break;
-                const int idx = rand() % nAvailMovesForThisTurn;
+                const int idx = rand.nextInt(nAvailMovesForThisTurn);
                 outcome = boardSim.doMove( storageForMoves[idx] );
                 boardSim.switchPlayer();
             } while (outcome==Outcome::running);
@@ -1764,11 +1809,9 @@ int shallowestTerminalDepth = 9999;
               BitfieldIntType BitfieldType,
               Gameview Board,
               typename AiCtx,
-              typename NN,
-              typename Rndfunc
+              typename NN
              >
-             // todo: 'rand' is only used in the simulator, so maybe it should be moved there instead of being passed all the way down here?
-    constexpr MCTS_result<MoveType> mcts(const Board& boardOriginal, AiCtx& ai_ctx, NN& nn, Rndfunc rand) noexcept
+    constexpr MCTS_result<MoveType> mcts(const Board& boardOriginal, AiCtx& ai_ctx, NN& nn, UQWORD seed=69420) noexcept
     {
         [[maybe_unused]] auto UCBselectBranch =
             [](const Node<MoveType>& node) -> Node<MoveType> *
@@ -1867,6 +1910,7 @@ int shallowestTerminalDepth = 9999;
         FLOAT threshold = 1.1f; // 'threshold' above which the result of .evaluate() is used, not minimax or randroll
         SWORD rootMovesRemaining;
         MCTS_result<MoveType> mcts_result;
+        Xoroshiro128Plus rand(seed);
         for (int iterations=0; root->activeBranches!=0 && iterations<MaxIterations; ++iterations)
         {
             Node<MoveType> *selectedNode = root;
@@ -2023,11 +2067,7 @@ int shallowestTerminalDepth = 9999;
                     for (int j=0; j<Board::MaxNetworkInputs; ++j)
                         batchNNInputs[i*Board::MaxNetworkInputs + j] = boardForNN.getNetworkInputs()[j];
                 }
-                // Should be rand to ensure fair distribution:
-                const auto sample = rand() % selectedNode->activeBranches;
-                // ^^^ What that means is that if we bias towards a specific kind of node: good,
-                // bad or something else, then we will fail to discover unexpected possibilities!
-                selectedNode = &selectedNode->branches[sample];
+                selectedNode = &selectedNode->branches[selectedNode->activeBranches - 1];
                 //aiAssert(selectedNode->score < 1.f);
                 outcome = boardClone.doMove( selectedNode->moveHere );
                 boardClone.switchPlayer();
@@ -2176,14 +2216,12 @@ int shallowestTerminalDepth = 9999;
                 selectedNode->shallowestTerminalDepth = child_dpt<dpt_temp ? child_dpt : dpt_temp;
                 child_dpt = dpt_temp;
 
-                //selectedNode->visits += 1.f ;//- ((cur-0.f)/(depth-0.f)); // Games that have more than two possible outcomes (example:
-                //selectedNode->visits += aiLog( 100 * ((cur-0.f)/(depth-0.f)) );
-
                 // This 'if' is used to (optionally) stop counting scores for branches that are deeper
                 // than the most immediate node where a turn ends:
                 //if ([&]{ if constexpr ((cutoff_scoring&hyperparams)==cutoff_scoring) return branchDepth<cutoff; else return true; }())
                //////////
                 if (depth <= cutoffDepth) [[likely]] // <- This line dramatically improves the "ai"
+                /// alternativ idea^^^^ instead of cutting of the branch, if we discover a cutoff, we could just stop counting the score for deeper branches, but still count visits and use the score for move selection! That way we can "see" strong moves beyond the cutoff, but we won't be "fooled" by them because they won't get high scores due to the cutoff!
                 {
                     // 'visits' does not tell us if a position is a winner or not. It tells us
                     // how -interesting- a position is:
@@ -2486,40 +2524,20 @@ int shallowestTerminalDepth = 9999;
 
     static_assert([]
                   {
-                      UQWORD xoroshiro128plus_state[2] = {0x9E3779B97f4A7C15ull,0xBF58476D1CE4E5B9ull};
-
-                      //   Written in 2016-2018 by David Blackman and Sebastiano Vigna (vigna@acm.org)
-                      // To the extent possible under law, the author has dedicated all copyright
-                      // and related and neighboring rights to this software to the public domain
-                      // worldwide. This software is distributed without any warranty.
-                      // See <http://creativecommons.org/publicdomain/zero/1.0/>.
-                      auto xoroshiro128plus = [](UQWORD (&state)[2]) -> UQWORD
-                      {
-                          // The generators ending with + have weak low bits, so they
-                          // are recommended for floating point number generation
-                          const UQWORD s0 = state[0];
-                          UQWORD s1 = state[1];
-                          const UQWORD result = s0 + s1;
-
-                          s1 ^= s0;
-                          state[0] = ((s0 << 55) | (s0 >> (64 - 55))) ^ s1 ^ (s1 << 14); // a, b
-                          state[1] = (s1 << 36) | (s1 >> (64 - 36)); // c
-                          return result;
-                      };
-
+                      Xoroshiro128Plus rand(0x9E3779B97f4A7C15ull);
                       TicTacTest t1;
                       t1.pos[0]=2; t1.pos[1]=1; t1.pos[2]=2;
                       t1.pos[3]=1; t1.pos[4]=1; t1.pos[5]=2;
                       t1.pos[6]=0; t1.pos[7]=2; t1.pos[8]=1;
                       t1.currentPlayer = 1;
-                      float res = simulate<1>(t1, [&xoroshiro128plus_state, xoroshiro128plus]{ return xoroshiro128plus(xoroshiro128plus_state); });
+                      float res = simulate<1>(t1, rand);
                       bool ok = (res < .1f) && (res > -.1f); // draw
                       TicTacTest t2;
                       t2.pos[0]=1; t2.pos[1]=1; t2.pos[2]=0;
                       t2.pos[3]=2; t2.pos[4]=0; t2.pos[5]=0;
                       t2.pos[6]=0; t2.pos[7]=2; t2.pos[8]=0;
                       t2.currentPlayer = 1;
-                      res = simulate<1>(t2, [&xoroshiro128plus_state, xoroshiro128plus]{ return xoroshiro128plus(xoroshiro128plus_state); });
+                      res = simulate<1>(t2, rand);
                       return ok && (res>.5f); // Player 1 wins
                   }()
                  );
