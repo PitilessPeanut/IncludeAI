@@ -73,9 +73,6 @@ namespace include_ai {
 
     template <typename T>
     concept Gameview =
-        !std::copy_constructible<T> &&
-        !std::is_copy_assignable<T>::value &&
-        !std::copyable<T> &&
         requires (T obj, const T cobj)
         {
             // todo: how to require noexcept?
