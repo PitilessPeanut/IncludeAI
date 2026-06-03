@@ -754,14 +754,17 @@ int shallowestTerminalDepth = 9999;
             else if (selectedNode->activeBranches > 0)
             {
                 aiAssert(selectedNode->branches);
-                FLOAT batchNNInputs[64*Board::MaxNetworkInputs] = {0};
-                for (int i=0; i<aiMin(selectedNode->activeBranches, 64); ++i)
+                if constexpr (Board::MaxNetworkInputs > 0)
                 {
-                    Board boardForNN = boardClone.clone();
-                    boardForNN.doMove( selectedNode->branches[i].moveHere );
-                    boardForNN.switchPlayer();
-                    for (int j=0; j<Board::MaxNetworkInputs; ++j)
-                        batchNNInputs[i*Board::MaxNetworkInputs + j] = boardForNN.getNetworkInputs()[j];
+                    FLOAT batchNNInputs[64*Board::MaxNetworkInputs] = {0};
+                    for (int i=0; i<aiMin(selectedNode->activeBranches, 64); ++i)
+                    {
+                        Board boardForNN = boardClone.clone();
+                        boardForNN.doMove( selectedNode->branches[i].moveHere );
+                        boardForNN.switchPlayer();
+                        for (int j=0; j<Board::MaxNetworkInputs; ++j)
+                            batchNNInputs[i*Board::MaxNetworkInputs + j] = boardForNN.getNetworkInputs()[j];
+                    }
                 }
                 selectedNode = &selectedNode->branches[selectedNode->activeBranches - 1];
                 //aiAssert(selectedNode->score < 1.f);

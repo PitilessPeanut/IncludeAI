@@ -28,6 +28,7 @@ public:
                               0,0,0
                              };
     int currentPlayer=1, winner=0, turn=0;
+    static constexpr int MaxNetworkInputs = 0;
 public:
     constexpr TicTacBoard() {}
     TicTacBoard(const TicTacBoard&) = delete;
@@ -128,16 +129,16 @@ struct TicTacAiMCTS : TicTacPlayerBase
     struct NeuralDummy
     {
         FLOAT x;
-        FLOAT *evaluate(const FLOAT *inputs, const FLOAT boardScore)
+        FLOAT *evaluate(const FLOAT *inputs)
         {
-            x = boardScore;
+            x = 0.f;
             return &x;
         }
     } dummy_nn;
     TicTacBoard::Move selectMove([[maybe_unused]] const TicTacBoard& original, [[maybe_unused]] const int input) override
     {
         const auto res =
-            mcts<150, simDepth, minimaxDepth, int, UQWORD>(original, ai_ctx, dummy_nn, []{return pcgRand<UDWORD>();});
+            mcts<150, simDepth, minimaxDepth, int, UQWORD>(original, ai_ctx, dummy_nn, 42);
         return res.best;
     }
 };
