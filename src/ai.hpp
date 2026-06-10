@@ -267,25 +267,25 @@ int shallowestTerminalDepth = 9999;
         Node<MoveType>& swapSrc = parent->branches[parent->activeBranches-1];
 
         // Don't swap w/ itself if the to-be-removed node is last:
-        if (&swapDst == &parent->branches[parent->activeBranches-1])
-            parent->activeBranches -= 1;
+        if (&swapDst == &swapSrc)
+        {
+         //   parent->activeBranches -= 1;
 
-        swapDst.activeBranches  = swapSrc.activeBranches;
-        swapDst.createdBranches = swapSrc.createdBranches;
-        swapDst.moveHere        = swapSrc.moveHere;
-        swapDst.visits          = swapSrc.visits;
-        swapDst.score           = swapSrc.score;
-        swapDst.branches        = swapSrc.branches;
+            swapDst.activeBranches  = swapSrc.activeBranches;
+            swapDst.createdBranches = swapSrc.createdBranches;
+            swapDst.moveHere        = swapSrc.moveHere;
+            swapDst.visits          = swapSrc.visits;
+            swapDst.score           = swapSrc.score;
+            swapDst.branches        = swapSrc.branches;
 
+            swapDst.branchScore = swapSrc.branchScore;
+            swapDst.shallowestTerminalDepth = swapSrc.shallowestTerminalDepth;
 
-        swapDst.branchScore = swapSrc.branchScore;
-        swapDst.shallowestTerminalDepth = swapSrc.shallowestTerminalDepth;
-
-
-        // Establish new "parent" for each branch node after swap
-        // (the "parent" was prev. &swapSrc):
-        for (int i=0; i<swapDst.activeBranches; ++i)
-            swapDst.branches[i].parent = &swapDst;
+            // Establish new "parent" for each branch node after swap
+            // (the "parent" was prev. &swapSrc):
+            for (int i=0; i<swapDst.activeBranches; ++i)
+                swapDst.branches[i].parent = &swapDst;
+        }
 
         parent->activeBranches -= 1;
         aiAssert(swapDst.parent == parent);
