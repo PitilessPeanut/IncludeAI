@@ -131,7 +131,6 @@ namespace include_ai {
             {obj.getNetworkInputs()} -> convertible_to_ptrFloat;
             {obj.randomize()};
             //{ T::MaxNetworkInputs } -> std::convertible_to<std::size_t>; // todo
-            //requires std::bool_constant<T::MaxNetworkInputs >= 0>::value;
         };
 
 
@@ -267,7 +266,7 @@ int shallowestTerminalDepth = 9999;
         Node<MoveType>& swapSrc = parent->branches[parent->activeBranches-1];
 
         // Don't swap w/ itself if the to-be-removed node is last:
-        if (&swapDst == &swapSrc)
+        if (&swapDst != &swapSrc)
         {
          //   parent->activeBranches -= 1;
 
