@@ -240,11 +240,6 @@ int shallowestTerminalDepth = 9999;
         const auto posOfChild = removeMe - parent->branches;
         Node<MoveType>& swapDst = parent->branches[posOfChild]; // Bypass the 'const'
 
-        // Discard all child branches of each of the child nodes of the node
-        // we want to remove (recursive):
-        //for (int i=0; i<swapDst.createdBranches; ++i)
-        //    discard(ai_ctx, swapDst.branches[i]);
-
         // 'parent->parent' is correct:
         const bool branchIsChildOfRoot = parent->parent == nullptr; // Keep full set of moves for root
         if (removeMe->createdBranches && !branchIsChildOfRoot)
@@ -252,10 +247,6 @@ int shallowestTerminalDepth = 9999;
             //std::printf("rem: %d \n", removeMe->createdBranches);
             ai_ctx.bitalloc.free(removeMe->branches - ai_ctx.nodePool, removeMe->createdBranches);
         }
-
-        // But don't discard() the child node, that is the slot we will swap into:
-        //discard(ai_ctx, swapDst); // incorrect!! // todo test!!
-
 
         const MoveType removedMoveHere = swapDst.moveHere;
         const auto     removedVisits   = swapDst.visits;
@@ -265,7 +256,7 @@ int shallowestTerminalDepth = 9999;
 
         Node<MoveType>& swapSrc = parent->branches[parent->activeBranches-1];
 
-        // Don't swap w/ itself if the to-be-removed node is last:
+        // Only swap if the to-be-removed node isn't itself:
         if (&swapDst != &swapSrc)
         {
          //   parent->activeBranches -= 1;
@@ -284,6 +275,12 @@ int shallowestTerminalDepth = 9999;
             // (the "parent" was prev. &swapSrc):
             for (int i=0; i<swapDst.activeBranches; ++i)
                 swapDst.branches[i].parent = &swapDst;
+
+            swapSrc.activeBranches = 0;
+        }
+        else
+        {
+            swapDst.activeBranches = 0;
         }
 
         parent->activeBranches -= 1;
