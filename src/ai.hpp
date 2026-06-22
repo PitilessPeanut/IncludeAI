@@ -346,8 +346,7 @@ int shallowestTerminalDepth = 9999;
     constexpr SWORD MinimaxDraw           =    0;
     constexpr SWORD MinimaxLose           =   -1;
     constexpr SWORD MinimaxInit           =   -2;
-    // Both "undeterminable" and "indeterminable" are correct and can be used interchangeably in many
-    // contexts. However, "indeterminable" is more commonly used in formal or academic writing. (ai)
+    // Both "undeterminable" and "indeterminable" are correct and can be used blahblahblah.... (ai)
     constexpr SWORD MinimaxIndeterminable = -999;
 
     template <Gameview Board, GameMove MoveType>
@@ -692,7 +691,7 @@ int shallowestTerminalDepth = 9999;
                 if ((nodePos+nValidMoves) >= ai_ctx.numNodes) [[unlikely]] // This can happen at the end
                 {
                     mcts_result.errorOutOfMem = true;
-                    std::printf("\033[1;35mexceeded! %d vs  %d \n\033[0m", ai_ctx.numNodes, nodePos+nValidMoves);
+                    //std::printf("\033[1;35mexceeded! %d vs  %d \n\033[0m", ai_ctx.numNodes, nodePos+nValidMoves);
                     // Can't be salvaged. Once we are out of nodes we can't release already
                     // alloc'd branches (cuz we must reach a terminal node for that). We are stuck:
                     break; // out-of-mem is stopping condition
@@ -1077,7 +1076,7 @@ int shallowestTerminalDepth = 9999;
 
 
 
-            for (int i=0; i<root->createdBranches; ++i)
+            for (int i=0; false && i<root->createdBranches; ++i)
             {
                 // todo assert(root->branches[i].score != nan);
 
@@ -1086,8 +1085,8 @@ int shallowestTerminalDepth = 9999;
                 // v/s == exploration E!
                // std::printf("s:%4.3f v:%d  dp: %d   act:%d  s/v:%2.3f v/s:%2.5f \033[0m \n", root->branches[i].score, root->branches[i].visits, root->branches[i].shallowestTerminalDepth, root->branches[i].activeBranches, root->branches[i].score/ root->branches[i].visits,root->branches[i].visits/root->branches[i].score);
             }
-            std::printf("threshold: %.2f mv: %d \033[1;31mcutoff: %d\033[0m ACT:%d \n",
-                          threshold, root->branches[posScore].moveHere, cutoffDepth, root->activeBranches ); //, ai_ctx.maxPatternSimilarity);
+            //std::printf("threshold: %.2f mv: %d \033[1;31mcutoff: %d\033[0m ACT:%d \n",
+             //             threshold, root->branches[posScore].moveHere, cutoffDepth, root->activeBranches ); //, ai_ctx.maxPatternSimilarity);
 
 
 
