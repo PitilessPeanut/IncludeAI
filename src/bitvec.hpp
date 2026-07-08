@@ -128,6 +128,79 @@
             return result;
         }
 
+        constexpr Bitvec operator~() const
+        {
+            Bitvec result;
+            for (int i = 0; i < N_INTS; ++i)
+                result.mem[i] = ~mem[i];
+
+            // Safely mask off the trailing unused bits in the final word.
+            // This prevents issues with popcnt() or == accidentally counting
+            // the inverted padding bits.
+            constexpr int remainingBits = Size % w;
+            if constexpr (remainingBits != 0)
+            {
+                constexpr Int mask = (static_cast<Int>(1) << remainingBits) - 1;
+                result.mem[N_INTS - 1] &= mask;
+            }
+
+            return result;
+        }
+
+        constexpr Bitvec& operator+=(const Bitvec& rhs)
+        {
+            Int carry = 0;
+            for (int i=0; i<N_INTS; ++i)
+            {
+                Int a = mem[i];
+                Int b = rhs.mem[i];
+                Int sum = a + b + carry;
+                carry = carry ? (sum <= a) : (sum < a);
+                mem[i] = sum;
+            }
+            constexpr int remainingBits = Size % w;
+            if constexpr (remainingBits != 0)
+            {
+                constexpr Int mask = (Int(1) << remainingBits) - 1;
+                mem[N_INTS-1] &= mask;
+            }
+            return *this;
+        }
+
+        constexpr Bitvec operator+(const Bitvec& rhs) const
+        {
+            Bitvec result = *this;
+            result += rhs;
+            return result;
+        }
+
+        constexpr Bitvec& operator-=(const Bitvec& rhs)
+        {
+            Int borrow = 0;
+            for (int i=0; i<N_INTS; ++i)
+            {
+                Int a = mem[i];
+                Int b = rhs.mem[i];
+                Int diff = a - b - borrow;
+                borrow = borrow ? (diff >= a) : (diff > a);
+                mem[i] = diff;
+            }
+            constexpr int remainingBits = Size % w;
+            if constexpr (remainingBits != 0)
+            {
+                constexpr Int mask = (Int(1) << remainingBits) - 1;
+                mem[N_INTS-1] &= mask;
+            }
+            return *this;
+        }
+
+        constexpr Bitvec operator-(const Bitvec& rhs) const
+        {
+            Bitvec result = *this;
+            result -= rhs;
+            return result;
+        }
+
         constexpr void set(const int pos, const bool val)
         {
             const Int mask = Int(1) << (pos&(w-1));

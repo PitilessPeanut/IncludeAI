@@ -13,8 +13,9 @@ alpha     0.00.1 Pre-release release.
 pre-alpha 0.00.0 This version is *not* yet ready for prime time! Please contact me first before trying to test!
 
 ### Ai/LLM disclosure
-1) This library has been under development for over a decade. Large parts of the code predate the emergence of LLMs and coding agents.
-2) LLMs were heavily used for debugging and testing.
+1. This library has been under development for over a decade. Large parts of the code predate the emergence of LLMs and coding agents.
+2. LLMs were heavily used for debugging and testing.
+3. No, that's not a contradiction.
 
 ### Building
 Not necessary, just copying 'includeai.hpp' into your project should be enough. If you want to "build" it anyway here is how:

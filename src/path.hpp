@@ -42,7 +42,7 @@
         {
             // Asking for path to -1 forces Dijkstra to explore everything
             // until MaxDistance is reached or the queue is empty:
-            dijkstra(start, -1, board);
+            [[maybe_unused]] const IntType cost = dijkstra(start, -1, board);
         }
 
         constexpr IntType getExploredCost(IntType node) const
