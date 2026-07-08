@@ -2,6 +2,7 @@
 #define BITVEC_HPP
 
 #include "asmtypes.hpp"
+#include <compare>
 
 
 /****************************************/
@@ -47,9 +48,13 @@
             }
         };
     public:
+        static constexpr int NumBits = Size; // number of usable bits
+    public:
         constexpr Bitvec() = default;
 
         constexpr Bitvec(const Bitvec& other) = default;
+
+        constexpr explicit Bitvec(Int v) { mem[0] = v; }
 
         constexpr Bitvec& operator=(const Bitvec& rhs)
         {
@@ -78,6 +83,26 @@
                 constexpr Int mask = (Int(1) << remainingBits) - 1;
                 return (mem[N_INTS-1] & mask) == (rhs.mem[N_INTS-1] & mask);
             }
+        }
+
+        constexpr std::strong_ordering operator<=>(const Bitvec& rhs) const
+        {
+            constexpr int remainingBits = Size % w;
+            for (int i = N_INTS - 1; i >= 0; --i)
+            {
+                Int a = mem[i], b = rhs.mem[i];
+                if constexpr (remainingBits != 0)
+                {
+                    if (i == N_INTS - 1)
+                    {
+                        constexpr Int mask = (Int(1) << remainingBits) - 1;
+                        a &= mask; b &= mask;
+                    }
+                }
+                if (a != b) return a < b ? std::strong_ordering::less
+                                         : std::strong_ordering::greater;
+            }
+            return std::strong_ordering::equal;
         }
 
         constexpr void set(const int pos)
@@ -424,9 +449,41 @@
                 return -1; // Not found
             }
         }
+
+        template <typename F>
+        constexpr void forEachSetBit(F&& f) const
+        {
+            for (int i = 0; i < N_INTS; ++i)
+            {
+                Int word = mem[i];
+                if constexpr (Size % w != 0)
+                {
+                    if (i == N_INTS - 1)
+                    {
+                        constexpr Int mask = (Int(1) << (Size % w)) - 1;
+                        word &= mask;
+                    }
+                }
+                while (word)
+                {
+                    int bit = (sizeof(Int) == sizeof(UQWORD)) ? __builtin_ctzll(word)
+                                                              : __builtin_ctz(word);
+                    f(i * w + bit);
+                    word &= word - 1;
+                }
+            }
+        }
+
+        constexpr std::size_t hashValue() const
+        {
+            std::size_t h = 1469598103934665603ull; // FNV-1a offset basis
+            for (int i = 0; i < N_INTS; ++i)
+                h = (h ^ static_cast<std::size_t>(mem[i])) * 1099511628211ull;
+            return h;
+        }
     };
 
 
-#else
-  #error "double include"
+
+
 #endif // BITVEC_HPP
