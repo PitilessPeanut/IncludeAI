@@ -65,6 +65,21 @@
             return *this;
         }
 
+        constexpr explicit operator bool() const
+        {
+            for (int i = 0; i < N_INTS - 1; ++i)
+                if (mem[i] != 0) return true;
+
+            Int last_val = mem[N_INTS - 1];
+            constexpr int remainingBits = Size % w;
+            if constexpr (remainingBits != 0)
+            {
+                constexpr Int mask = (static_cast<Int>(1) << remainingBits) - 1;
+                last_val &= mask;
+            }
+            return last_val != 0;
+        }
+
         constexpr bool operator==(const Bitvec& rhs) const
         {
             int same = 0;

@@ -129,7 +129,7 @@ namespace include_ai {
             {cobj.getWinner()} -> std::equality_comparable;
             // {cobj.getBoardScore()} -> std::convertible_to<FLOAT>; // todo remove???
             {obj.getNetworkInputs()} -> convertible_to_ptrFloat;
-            {obj.randomize()};
+            {obj.randomize(bool{})};
             //{ T::MaxNetworkInputs } -> std::convertible_to<std::size_t>; // todo
         };
 
@@ -310,7 +310,8 @@ int shallowestTerminalDepth = 9999;
         // Run simulations:
         for (int i=0; i<MaxRandSims; ++i)
         {
-            Board boardSim = original.clone(); // todo: randomize?
+            Board boardSim = original.clone();
+            // Don't randomize. cannot shuffle hidden identities after moves have been made without destroying causality
             // Start single sim, run until end:
             auto outcome = Outcome::running;
             do
@@ -606,7 +607,7 @@ int shallowestTerminalDepth = 9999;
         {
             Node<MoveType> *selectedNode = root;
             Board boardClone = boardOriginal.clone();
-            boardClone.randomize(); // Hidden information is simulated by creating a "plausibe" random game state
+            boardClone.randomize(iterations); // Hidden information is simulated by creating a "plausibe" random game state
             typename Board::StorageForMoves storageForMoves;
             Outcome outcome = Outcome::running;
             int depth = 1;
@@ -672,7 +673,7 @@ int shallowestTerminalDepth = 9999;
             // 2. Add (allocate/expand) branch/child nodes to leaf:
             if (selectedNode->activeBranches==Node<MoveType>::never_expanded && outcome==Outcome::running)
             {
-                typename Board::StorageForMoves storageForMoves;
+                // typename Board::StorageForMoves storageForMoves; // todo: test and remove if working
                 int nValidMoves = boardClone.generateMovesAndGetCnt(storageForMoves);
                 const auto availNodes = ai_ctx.bitalloc.largestAvailChunk(nValidMoves);
                 nValidMoves = availNodes.length; // This line is critical!
