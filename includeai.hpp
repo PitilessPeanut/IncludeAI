@@ -1900,7 +1900,7 @@ UDWORD seed;
 
 
         Node<MoveType> *placeholder = nullptr; // Prevent gcc from deducting the wrong type... 🙄
-        Node<MoveType> *root = &insertNodeIntoPool(ai_ctx, 0, placeholder, MoveType{});
+        Node<MoveType> *root = &insertNodeIntoPool(ai_ctx, 0, placeholder, MoveType{}, rand());
         ai_ctx.bitalloc.clearAll();
         [[maybe_unused]] const auto throwaway = ai_ctx.bitalloc.largestAvailChunk(1);
         for (int i=0; i<AiCtx::numNodes; ++i)
