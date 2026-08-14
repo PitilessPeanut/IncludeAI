@@ -129,7 +129,7 @@ namespace include_ai {
             {cobj.getWinner()} -> std::equality_comparable;
             // {cobj.getBoardScore()} -> std::convertible_to<FLOAT>; // todo remove???
             {obj.getNetworkInputs()} -> convertible_to_ptrFloat;
-            {obj.randomize(bool{})};
+            {obj.randomize(unsigned{})};
             //{ T::MaxNetworkInputs } -> std::convertible_to<std::size_t>; // todo
         };
 
@@ -162,6 +162,7 @@ namespace include_ai {
         #endif
 SWORD branchScore = 0;
 int shallowestTerminalDepth = 9999;
+UDWORD seed;
 
         constexpr Node() noexcept
           : moveHere{}
@@ -302,6 +303,9 @@ int shallowestTerminalDepth = 9999;
 /****************************************/
 /*                            Simulator */
 /* MaxRandSims should be '%3 != 0'      */
+/* Don't randomize here. cannot shuffle */
+/* hidden identities after moves have   */
+/* been made without breaking causality */
 /****************************************/
     template <int MaxRandSims, Gameview Board>
     constexpr float simulate(const Board& original, Xoroshiro128Plus& rand)
@@ -311,7 +315,6 @@ int shallowestTerminalDepth = 9999;
         for (int i=0; i<MaxRandSims; ++i)
         {
             Board boardSim = original.clone();
-            // Don't randomize. cannot shuffle hidden identities after moves have been made without destroying causality
             // Start single sim, run until end:
             auto outcome = Outcome::running;
             do
@@ -607,7 +610,6 @@ int shallowestTerminalDepth = 9999;
         {
             Node<MoveType> *selectedNode = root;
             Board boardClone = boardOriginal.clone();
-            boardClone.randomize(iterations); // Hidden information is simulated by creating a "plausibe" random game state
             typename Board::StorageForMoves storageForMoves;
             Outcome outcome = Outcome::running;
             int depth = 1;
@@ -626,8 +628,9 @@ int shallowestTerminalDepth = 9999;
                 //aiAssert(selectedNode->branchScore == 0);
                 aiAssert(selectedNode->parent == parentOfSelected);
                 const MoveType moveHere = selectedNode->moveHere;
+                boardClone.randomize(selectedNode->seed); // Hidden information is simulated by creating a "plausibe" random game state
                 const int nMoves = boardClone.generateMovesAndGetCnt(storageForMoves);
-                // desyncs can happen due to the call to randomize() above ^^
+                // desyncs can happen due to the call to randomize()
                 bool moveIsValid = false;
                 for (int i=0; i<nMoves; ++i)
                 {

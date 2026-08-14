@@ -76,7 +76,7 @@
 
         constexpr float *getNetworkInputs() { return &neuralInputs[0]; }
 
-        constexpr void randomize() {}
+        constexpr void randomize(unsigned) {}
     };
 
     static_assert([]
