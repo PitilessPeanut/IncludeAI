@@ -168,11 +168,12 @@ UDWORD seed;
           : moveHere{}
         {}
 
-        constexpr Node(Node *newParent, Move move) noexcept
+        constexpr Node(Node *newParent, Move move, UDWORD seeed) noexcept
           : activeBranches(never_expanded),
             parent(newParent),
             // Ownership is implicit: the 'owner' is the player who makes this move!
-            moveHere(move)
+            moveHere(move),
+            seed(seeed)
         {}
 
         Node(const Node&)            = delete;
@@ -194,6 +195,7 @@ UDWORD seed;
                 moveHere        = other.moveHere;
             //    branchScore = other.branchScore;
                 shallowestTerminalDepth = other.shallowestTerminalDepth;
+                seed            = other.seed;
                 for (int i=0; i<other.createdBranches; ++i)
                     branches[i].parent = this;
             }
@@ -254,6 +256,7 @@ UDWORD seed;
         const auto     removedScore    = swapDst.score;
         const auto     removedBranchScore = swapDst.branchScore;
         const auto     removedShallowestTerminalDepth = swapDst.shallowestTerminalDepth;
+        const auto     removedSeed     = swapDst.seed;
 
         Node<MoveType>& swapSrc = parent->branches[parent->activeBranches-1];
 
@@ -271,6 +274,7 @@ UDWORD seed;
 
             swapDst.branchScore = swapSrc.branchScore;
             swapDst.shallowestTerminalDepth = swapSrc.shallowestTerminalDepth;
+            swapDst.seed            = swapSrc.seed;
 
             // Establish new "parent" for each branch node after swap
             // (the "parent" was prev. &swapSrc):
@@ -293,10 +297,10 @@ UDWORD seed;
 /*                               Memory */
 /****************************************/
     template <typename Ctx, GameMove MoveType>
-    inline constexpr auto& insertNodeIntoPool(Ctx& ctx, const int pos, Node<MoveType> *node, MoveType move)
+    inline constexpr auto& insertNodeIntoPool(Ctx& ctx, const int pos, Node<MoveType> *node, MoveType move, UDWORD seed)
     {
         aiAssert(pos < ctx.numNodes);
-        return ctx.nodePool[pos] = Node(node, move);
+        return ctx.nodePool[pos] = Node(node, move, seed);
     }
 
 
@@ -715,7 +719,7 @@ UDWORD seed;
 
                 aiAssert(ai_ctx.nodePool[nodePos].activeBranches <= 0);
                 MoveType move = storageForMoves[nValidMoves];
-                selectedNode->branches = &insertNodeIntoPool(ai_ctx, nodePos, selectedNode, move);
+                selectedNode->branches = &insertNodeIntoPool(ai_ctx, nodePos, selectedNode, move, rand());
 
 
                 while (nValidMoves--)
@@ -723,7 +727,7 @@ UDWORD seed;
                     nodePos += 1;
                     move = storageForMoves[nValidMoves];
                     [[maybe_unused]] const auto& unusedNode =
-                        insertNodeIntoPool(ai_ctx, nodePos, selectedNode, move);
+                        insertNodeIntoPool(ai_ctx, nodePos, selectedNode, move, rand());
                 }
                 //std::printf("\033[1;37mnew branch:%p brch:%p \033[0m \n", selectedNode-ai_ctx.nodePool, (&selectedNode->branches[0])-ai_ctx.nodePool);
                 for (int i=0; false && i<selectedNode->createdBranches; ++i) // todo put this loop into the assert
