@@ -171,7 +171,7 @@ int shallowestTerminalDepth = 9999;
           : activeBranches(never_expanded),
             parent(newParent),
             // Ownership is implicit: the 'owner' is the player who makes this move!
-            moveHere(move),
+            moveHere(move)
         {}
 
         Node(const Node&)            = delete;
