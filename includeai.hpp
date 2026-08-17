@@ -1774,6 +1774,7 @@ int shallowestTerminalDepth = 9999;
     struct MCTS_result
     {
         enum { simulations, minimaxes, thresholdLevel, networkEvaluated, terminalReached,
+               desyncs,
                score, visits,
                end
              };
@@ -1946,6 +1947,7 @@ int shallowestTerminalDepth = 9999;
                 if (!moveIsValid)
                 {
                     is_desynchronized = true;
+                    mcts_result.desyncs += 1;
                    // assert(false);
                     break;
                 }
