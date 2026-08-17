@@ -643,7 +643,7 @@ int shallowestTerminalDepth = 9999;
                 if (!moveIsValid)
                 {
                     is_desynchronized = true;
-                    mcts_result.desyncs += 1;
+                    mcts_result.statistics[MCTS_result<MoveType>::desyncs] += 1;
                    // assert(false);
                     break;
                 }
