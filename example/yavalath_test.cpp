@@ -164,7 +164,7 @@ public:
 
     float *getNetworkInputs() { return nullptr; }
 
-    constexpr void randomize(unsigned) {}
+    constexpr void randomize() {}
 
     constexpr void reset()
     {

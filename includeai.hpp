@@ -1435,7 +1435,7 @@ using FeedForward16 = FeedForward32<InputSize, OutputSize, Max_layers, HiddenWid
             {cobj.getWinner()} -> std::equality_comparable;
             // {cobj.getBoardScore()} -> std::convertible_to<FLOAT>; // todo remove???
             {obj.getNetworkInputs()} -> convertible_to_ptrFloat;
-            {obj.randomize(unsigned)};
+            {obj.randomize()};
             //{ T::MaxNetworkInputs } -> std::convertible_to<std::size_t>; // todo
         };
 

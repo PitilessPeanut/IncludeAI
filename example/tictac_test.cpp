@@ -93,7 +93,7 @@ public:
 
     float *getNetworkInputs() { return nullptr; }
 
-    void randomize(unsigned) {}
+    void randomize() {}
 
     void reset()
     {

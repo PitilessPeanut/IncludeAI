@@ -163,7 +163,7 @@ public:
         return networkInputs;
     }
 
-    constexpr void randomize(unsigned) {}
+    constexpr void randomize() {}
 
     int getStone(int idx) const
     {
