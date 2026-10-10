@@ -56,14 +56,7 @@
 
         constexpr explicit Bitvec(Int v) { mem[0] = v; }
 
-        constexpr Bitvec& operator=(const Bitvec& rhs)
-        {
-            if (this == &rhs)
-                return *this;
-            for (int i=0; i<N_INTS; ++i)
-                mem[i] = rhs.mem[i];
-            return *this;
-        }
+        constexpr Bitvec& operator=(const Bitvec&) = default;
 
         constexpr explicit operator bool() const
         {
