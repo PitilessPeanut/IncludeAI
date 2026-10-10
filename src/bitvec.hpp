@@ -491,9 +491,12 @@
 
         constexpr std::size_t hashValue() const
         {
-            std::size_t h = 1469598103934665603ull; // FNV-1a offset basis
+            std::size_t h = 14695981039346656037ull; // FNV-1a offset basis
             for (int i = 0; i < N_INTS; ++i)
                 h = (h ^ static_cast<std::size_t>(mem[i])) * 1099511628211ull;
+            h ^= h >> 33; h *= 0xff51afd7ed558ccdULL;
+            h ^= h >> 33; h *= 0xc4ceb9fe1a85ec53ULL;
+            h ^= h >> 33;
             return h;
         }
     };

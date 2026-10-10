@@ -1416,6 +1416,8 @@ using FeedForward16 = FeedForward32<InputSize, OutputSize, Max_layers, HiddenWid
 /* a guess/estimation of the game state */
 /* percieved by one player (incomplete  */
 /* information)                         */
+/* if you use randomize() make sure the */
+/* given state is *plausible*           */
 /****************************************/
     template <typename T>
     concept convertible_to_ptrFloat = std::convertible_to<T, DOUBLE *> || std::convertible_to<T, FLOAT *>;
@@ -1433,7 +1435,7 @@ using FeedForward16 = FeedForward32<InputSize, OutputSize, Max_layers, HiddenWid
             {cobj.getWinner()} -> std::equality_comparable;
             // {cobj.getBoardScore()} -> std::convertible_to<FLOAT>; // todo remove???
             {obj.getNetworkInputs()} -> convertible_to_ptrFloat;
-            {obj.randomize(unsigned{})};
+            {obj.randomize()};
             //{ T::MaxNetworkInputs } -> std::convertible_to<std::size_t>; // todo
         };
 
@@ -1914,7 +1916,7 @@ int shallowestTerminalDepth = 9999;
         {
             Node<MoveType> *selectedNode = root;
             Board boardClone = boardOriginal.clone();
-            boardClone.randomize(rand()); // Hidden information is simulated by creating a "plausibe" random game state
+            boardClone.randomize(); // Hidden information is simulated by creating a "plausibe" random game state
             typename Board::StorageForMoves storageForMoves;
             Outcome outcome = Outcome::running;
             int depth = 1;
@@ -2522,7 +2524,7 @@ int shallowestTerminalDepth = 9999;
 
         constexpr float *getNetworkInputs() { return &neuralInputs[0]; }
 
-        constexpr void randomize(unsigned) {}
+        constexpr void randomize() {}
     };
 
     static_assert([]
