@@ -482,6 +482,37 @@
             }
         }
 
+        constexpr bool isSubsetOf(const Bitvec& rhs) const
+        {
+            for (int i = 0; i < (N_INTS - 1); ++i)
+                if ((mem[i] & ~rhs.mem[i]) != 0) return false;
+
+            constexpr int remainingBits = Size % w;
+            if constexpr (remainingBits == 0)
+                return (mem[N_INTS - 1] & ~rhs.mem[N_INTS - 1]) == 0;
+            else
+            {
+                constexpr Int mask = (Int(1) << remainingBits) - 1;
+                return ((mem[N_INTS - 1] & ~rhs.mem[N_INTS - 1]) & mask) == 0;
+            }
+        }
+
+        // Returns the lowest bit where (*this has 1) and (rhs has 0), or -1 if none
+        constexpr int firstDiffBit(const Bitvec& rhs) const
+        {
+            for (int i = 0; i < N_INTS; ++i)
+            {
+                Int diff = mem[i] & ~rhs.mem[i];
+                if (diff != 0)
+                {
+                    int bit = (sizeof(Int) == sizeof(UQWORD)) ? __builtin_ctzll(diff)
+                                                              : __builtin_ctz(diff);
+                    return i * w + bit;
+                }
+            }
+            return -1;
+        }
+
         constexpr std::size_t hashValue() const
         {
             std::size_t h = 14695981039346656037ull; // FNV-1a offset basis
